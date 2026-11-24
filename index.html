@@ -48,6 +48,14 @@ input:focus,select:focus{border-color:var(--accent)}
 .list{display:flex;flex-direction:column;gap:2px}
 .item{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--surface2);border-radius:8px}
 .item.clickable{cursor:pointer}
+.swipe{position:relative;overflow:hidden;border-radius:8px;background:var(--red)}
+.swipe .item{position:relative;transition:transform .2s;touch-action:pan-y}
+.swipe-del{position:absolute;right:0;top:0;bottom:0;width:90px;border:none;background:var(--red);color:#fff;font:600 15px var(--font);cursor:pointer}
+.selbox{width:24px;height:24px;flex:none;border-radius:6px;border:2px solid var(--muted);position:relative}
+.selbox.on{background:var(--accent);border-color:var(--accent)}
+.selbox.on::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
+#sel-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:150;gap:10px;align-items:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border)}
+#sel-bar .btn{width:auto;flex:1}
 .icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
 .info{flex:1;min-width:0}
 .name{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -84,6 +92,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .ocr-row input:checked{background:var(--accent);border-color:var(--accent)}
 .ocr-row input:checked::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
 .ocr-row span.d{flex:1}
+.ocr-cat{display:block;margin-top:6px;padding:6px 10px;font-size:14px;width:auto;border-radius:6px}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{padding:5px 11px;border-radius:20px;font-size:13px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:var(--font)}
 .tag.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -149,7 +158,7 @@ input:focus,select:focus{border-color:var(--accent)}
 </div>
 
 <div id="view-spending" class="view">
-  <div class="section-header"><h2>Spending</h2><button class="btn btn-primary btn-sm" onclick="openTx()">+ Add</button></div>
+  <div class="section-header"><h2>Spending</h2><div style="display:flex;gap:8px"><button class="btn btn-secondary btn-sm" id="sel-toggle" onclick="toggleSel()">Select</button><button class="btn btn-primary btn-sm" onclick="openTx()">+ Add</button></div></div>
   <label class="upload-zone">
     <input type="file" id="shot" accept="image/*">
     <div class="big">📷</div>
@@ -245,6 +254,8 @@ input:focus,select:focus{border-color:var(--accent)}
   <canvas id="share-cv" width="1080" height="760" style="width:100%;border-radius:12px;margin:14px 0;display:block"></canvas>
   <button class="btn btn-primary" onclick="sendShare()">Send picture</button>
 </div></div>
+
+<div id="sel-bar"><button class="btn btn-secondary" onclick="selAll()">Select all</button><button class="btn btn-danger" id="sel-del" onclick="delSelected()">Delete</button></div>
 
 <div id="toast"></div>
 <script>
@@ -356,8 +367,44 @@ function txRow(t) {
   el.innerHTML = `<div class="icon" style="background:${inc ? 'rgba(62,207,142,.15)' : 'rgba(242,107,107,.1)'}">${EMOJI[t.category] || '📌'}</div>
     <div class="info"><div class="name">${esc(t.description)}${badge}</div><div class="meta">${t.card ? esc(t.card) + ' · ' : ''}${esc(t.category)} · ${fmtDate(t.date)}${who}</div></div>
     <div class="amt" style="color:${inc ? 'var(--green)' : 'var(--red)'}">${inc ? '+' : '−'}${money(t.amount)}</div>`;
-  if (mine(t)) el.onclick = () => openTx(t);
-  return el;
+  if (!mine(t)) return el;
+  if (selMode) {
+    const box = document.createElement('div'); box.className = 'selbox' + (selected.has(t.id) ? ' on' : '');
+    el.prepend(box); el.classList.add('clickable');
+    el.onclick = () => { selected.has(t.id) ? selected.delete(t.id) : selected.add(t.id); box.classList.toggle('on'); updateSelBar(); };
+    return el;
+  }
+  // swipe left to reveal Delete
+  const wrap = document.createElement('div'); wrap.className = 'swipe';
+  const del = document.createElement('button'); del.className = 'swipe-del'; del.textContent = 'Delete';
+  del.onclick = async e => { e.stopPropagation(); await deleteIds([t.id], false); };
+  wrap.append(del, el);
+  let x0 = 0, y0 = 0, dx = 0, horiz = null;
+  el.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; horiz = null; el.style.transition = 'none';
+    document.querySelectorAll('.swipe .item').forEach(o => { if (o !== el) o.style.transform = ''; }); }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (horiz === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) horiz = Math.abs(mx) > Math.abs(my);
+    if (!horiz) return;
+    e.preventDefault(); const open = el.dataset.open === '1'; dx = Math.max(-90, Math.min(0, mx + (open ? -90 : 0)));
+    el.style.transform = `translateX(${dx}px)`; }, { passive: false });
+  el.addEventListener('touchend', () => { el.style.transition = '';
+    if (horiz) { const o = dx < -45; el.dataset.open = o ? '1' : '0'; el.style.transform = o ? 'translateX(-90px)' : ''; wrap._moved = true; setTimeout(() => wrap._moved = false, 300); } });
+  el.onclick = () => { if (wrap._moved) return; if (el.dataset.open === '1') { el.dataset.open = '0'; el.style.transform = ''; return; } openTx(t); };
+  return wrap;
+}
+// ---- select & delete ----
+let selMode = false; const selected = new Set();
+function toggleSel() { selMode = !selMode; selected.clear(); $('sel-toggle').textContent = selMode ? 'Done' : 'Select'; $('sel-bar').style.display = selMode ? 'flex' : 'none'; updateSelBar(); renderTx(); }
+function selAll() { const ids = txs.filter(t => mine(t) && t.date.startsWith(selMonth)).map(t => t.id); if (ids.every(i => selected.has(i))) selected.clear(); else ids.forEach(i => selected.add(i)); updateSelBar(); renderTx(); }
+function updateSelBar() { $('sel-del').textContent = selected.size ? `Delete ${selected.size}` : 'Delete'; $('sel-del').disabled = !selected.size; $('sel-del').style.opacity = selected.size ? 1 : .4; }
+async function delSelected() { if (selected.size) await deleteIds([...selected], true); }
+async function deleteIds(ids, ask) {
+  if (ask && !confirm(`Delete ${ids.length} transaction${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return;
+  const { error } = await sb.from('transactions').delete().in('id', ids);
+  if (error) { toast('Couldn’t delete: ' + error.message); return; }
+  selected.clear(); toast(`Deleted ${ids.length}`); loadAll();
+  if (selMode) { updateSelBar(); }
 }
 function fill(id, items, make, emptyMsg) {
   const box = $(id); box.innerHTML = '';
@@ -470,6 +517,7 @@ function renderSave() {
 // ── navigation + modals ──
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => go(b.dataset.v));
 function go(v) {
+  if (selMode && v !== 'spending') toggleSel();
   document.querySelectorAll('.view').forEach(x => x.classList.toggle('active', x.id === 'view-' + v));
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('active', x.dataset.v === v));
   window.scrollTo(0, 0);
@@ -613,8 +661,9 @@ function showOcr() {
     if (!ocrItems.length) { status.innerHTML = '<div class="tip"><div class="tip-title">No transactions found</div><div class="tip-body">Try a screenshot that shows the transaction list clearly, with amounts visible.</div></div>'; return; }
     $('ocr-list').innerHTML = ocrItems.map((t, i) => {
       const dup = txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
-      return `<label class="ocr-row"><input type="checkbox" data-i="${i}" ${dup ? '' : 'checked'}>
-        <span class="d">${esc(t.description)}<br><span class="meta">${esc(t.category)} · ${fmtDate(t.date)}${dup ? ' · already logged?' : ''}</span></span>
+      const opts = (t.type === 'income' ? CATS.income : CATS.expense).map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('');
+      return `<label class="ocr-row"><input type="checkbox" data-i="${i}" ${dup || t.skip ? '' : 'checked'}>
+        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · card repayment, unticked' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
         <span class="amt" style="color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</span></label>`;
     }).join('');
     setSeg('ocr-vis', 'v', 'private');
@@ -680,42 +729,53 @@ function prepImage(file) {
 }
 const AMT = /([+\-−–]?)\s*[$S§]\s?(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\b/;
 const NOISE = /^(transactions|statements|notices|home|membership|offers|account|overview|plan it|show less|wallet|see \d|surepay|pay off|spend \$|expires|\d{1,2}:\d{2})/i;
+function ruleKey(d) { return d.toUpperCase().replace(/^[A-Z]{2,4}\*/, '').replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).join(' '); }
+function getRules() { try { return JSON.parse(localStorage.getItem('ps_rules')) || {}; } catch (e) { return {}; } }
+function guessCat(desc, income) {
+  const learned = getRules()[ruleKey(desc)];
+  const cat = learned || (GUESS.find(([re]) => re.test(desc)) || [null, 'Other'])[1];
+  return (income ? CATS.income : CATS.expense).includes(cat) ? cat : 'Other';
+}
 async function freeOcr(file) {
   await loadTesseract();
   const img = await prepImage(file);
   const { data } = await Tesseract.recognize(img, 'eng', { tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
   const lines = data.text.split('\n').map(l => l.replace(/[|•·_]+/g, ' ').replace(/\s+/g, ' ').trim()).filter(l => l.length > 1);
-  const out = []; let curDate = todayStr(), pending = [], last = null;
-  const flush = () => { pending = []; };
-  for (const line of lines) {
-    const dl = parseDateLine(line);
-    const am = line.match(AMT);
-    const dateOnly = dl && !am && line.replace(/[a-z0-9 ,.]/gi, '').length < 3 && /^(mon|tue|wed|thu|fri|sat|sun|\d)/i.test(line) && line.length < 40;
-    if (dateOnly) { curDate = dl; flush(); last = null; continue; }
+  const seq = []; let pending = [], last = null;   // seq holds dates and transactions in reading order
+  for (const raw of lines) {
+    if (/\bpresent\b|^card ending|^filter$|^\d{1,2}\s+\w+\s+\d{4}\s*[-–—]/i.test(raw)) continue; // date-range header
+    const dl = parseDateLine(raw), am = raw.match(AMT);
+    const dateOnly = dl && !am && raw.length < 40 && /^(mon|tue|wed|thu|fri|sat|sun|\d)/i.test(raw) && raw.replace(/[a-z0-9 ,.]/gi, '').length < 3;
+    if (dateOnly) { seq.push({ d: dl }); pending = []; last = null; continue; }
     if (am) {
       const amount = parseFloat(am[2].replace(/,/g, ''));
-      if (/balance|available|total|spend this|get \$|back/i.test(line) || !(amount > 0)) { flush(); continue; }
-      let desc = line.slice(0, am.index).trim();
+      if (/balance|available|total|spend this|get \$|back/i.test(raw) || !(amount > 0)) { pending = []; continue; }
+      let desc = raw.slice(0, am.index).trim();
       if (NOISE.test(desc)) desc = '';
       if (desc.length < 3) desc = pending.join(' ');
-      desc = desc.replace(/\b(plan it)\b/ig, '').replace(/^[^a-z0-9]+/i, '').replace(/\s+/g, ' ').trim();
-      if (desc.length < 2) { flush(); continue; }
-      const income = am[1] === '+' || /refund|salary|payroll|deposit|transfer from|received|thank you|payment-thank/i.test(desc);
-      const cat = (GUESS.find(([re]) => re.test(desc)) || [null, 'Other'])[1];
-      last = { description: desc.slice(0, 120), amount, date: dl || curDate, type: income ? 'income' : 'expense',
-               category: income ? (CATS.income.includes(cat) ? cat : 'Other') : (CATS.expense.includes(cat) ? cat : 'Other') };
-      out.push(last); flush();
-    } else if (!NOISE.test(line)) {
-      if (dl) { curDate = dl; flush(); last = null; continue; }
-      // text with no amount: description for the next amount, or the location line of the last one
-      if (last && pending.length === 0 && last.description.length < 28 && /^[A-Z0-9 .\-,'\/&*]+$/.test(line) && line.length < 28) { last.description = (last.description + ' ' + line).slice(0, 120); }
-      else pending = [...pending, line].slice(-2);
+      desc = desc.replace(/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s*/, '').replace(/\b(plan it)\b/ig, '').replace(/^[^a-z0-9]+/i, '').replace(/\s+/g, ' ').trim();
+      if (desc.length < 2) { pending = []; continue; }
+      const repay = /payment[- ]?thank|payment received|thank you/i.test(desc);
+      const income = am[1] === '+' || /refund|salary|payroll|deposit|transfer from/i.test(desc);
+      last = { description: desc.slice(0, 120), amount, date: dl || null, type: income ? 'income' : 'expense', category: guessCat(desc, income), skip: repay };
+      seq.push(last); pending = [];
+    } else if (!NOISE.test(raw)) {
+      if (dl) { seq.push({ d: dl }); pending = []; last = null; continue; }
+      if (last && pending.length === 0 && last.description.length < 28 && /^[A-Z0-9 .\-,'\/&*]+$/.test(raw) && raw.length < 28) { last.description = (last.description + ' ' + raw).slice(0, 120); last.category = guessCat(last.description, last.type === 'income'); }
+      else pending = [...pending, raw].slice(-2);
     }
   }
-  // drop exact duplicates created by OCR re-reads
+  // Dates either head a group (above) or sit under each row (below)
+  const above = seq.length && seq[0].d !== undefined, out = [];
+  let cur = null, waiting = [];
+  for (const e of seq) {
+    if (e.d !== undefined) {
+      if (above) cur = e.d; else { waiting.forEach(t => { if (!t.date) t.date = e.d; }); waiting = []; cur = e.d; }
+    } else { if (above && !e.date) e.date = cur; if (!above && !e.date) waiting.push(e); out.push(e); }
+  }
+  out.forEach(t => { if (!t.date) t.date = cur || todayStr(); });
   return out.filter((t, i) => out.findIndex(u => u.description === t.description && u.amount === t.amount && u.date === t.date) === i);
 }
-
 // ---- Shareable balance picture ----
 function shareNums() {
   const per = getSeg('share-per', 'v');
@@ -780,7 +840,13 @@ function chosenCard() {
 async function importOcr() {
   const shared = getSeg('ocr-vis', 'v') === 'shared';
   const card = chosenCard();
-  const rows = [...$('ocr-list').querySelectorAll('input:checked')].map(cb => ({ ...ocrItems[+cb.dataset.i], shared, card }));
+  const rules = getRules();
+  const rows = [...$('ocr-list').querySelectorAll('input:checked')].map(cb => {
+    const i = +cb.dataset.i, it = ocrItems[i], cat = $('ocr-list').querySelector(`select[data-i="${i}"]`).value;
+    if (cat !== it.category && cat !== 'Other') rules[ruleKey(it.description)] = cat;
+    const { skip, ...rest } = it; return { ...rest, category: cat, shared, card };
+  });
+  try { localStorage.setItem('ps_rules', JSON.stringify(rules)); } catch (e) {}
   if (!rows.length) { closeM('ocr-modal'); return; }
   let { error } = await sb.from('transactions').insert(rows);
   if (error && /card/i.test(error.message)) {
