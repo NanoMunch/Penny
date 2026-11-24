@@ -266,11 +266,12 @@ const OCR_MODEL = 'claude-sonnet-5-5';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const CATS = {
-  expense: ['Groceries','Dining','Transport','Fuel','Bills','Subscriptions','Entertainment','Health','Shopping','Other'],
-  income: ['Pay','Freelance','Gift','Refund','Other']
+  expense: ['Groceries','Dining','Transport','Fuel','Bills','Subscriptions','Entertainment','Health','Shopping','Transfer','Other'],
+  income: ['Pay','Freelance','Gift','Refund','Transfer','Other']
 };
-const EMOJI = {Groceries:'🛒',Dining:'🍜',Transport:'🚌',Fuel:'⛽',Bills:'💡',Subscriptions:'📱',Entertainment:'🎬',Health:'💊',Shopping:'🛍️',Pay:'💰',Freelance:'💻',Gift:'🎁',Refund:'↩️',Other:'📌'};
+const EMOJI = {Groceries:'🛒',Dining:'🍜',Transport:'🚌',Fuel:'⛽',Bills:'💡',Subscriptions:'📱',Entertainment:'🎬',Health:'💊',Shopping:'🛍️',Pay:'💰',Freelance:'💻',Gift:'🎁',Refund:'↩️',Transfer:'🔁',Other:'📌'};
 
+const counts = t => t.category !== 'Transfer';   // transfers (card payments, moves between accounts) aren't income or spending
 let me = null, started = false, names = {}, txs = [], bills = [];
 let selMonth = todayStr().slice(0,7), editing = null, txCat = 'Groceries', ocrItems = [];
 
@@ -362,12 +363,12 @@ function renderAll() { renderDash(); renderMonths(); renderTx(); renderBills(); 
 function txRow(t) {
   const el = document.createElement('div');
   el.className = 'item' + (mine(t) ? ' clickable' : '');
-  const inc = t.type === 'income';
+  const inc = t.type === 'income', xfer = t.category === 'Transfer';
   const who = mine(t) ? '' : ' · ' + esc(names[t.user_id] || 'Partner');
   const badge = t.shared ? ' <span class="pill pill-shared">shared</span>' : '';
-  el.innerHTML = `<div class="icon" style="background:${inc ? 'rgba(62,207,142,.15)' : 'rgba(242,107,107,.1)'}">${EMOJI[t.category] || '📌'}</div>
+  el.innerHTML = `<div class="icon" style="background:${xfer ? 'rgba(138,146,176,.15)' : inc ? 'rgba(62,207,142,.15)' : 'rgba(242,107,107,.1)'}">${EMOJI[t.category] || '📌'}</div>
     <div class="info"><div class="name">${esc(t.description)}${badge}</div><div class="meta">${t.card ? esc(t.card) + ' · ' : ''}${esc(t.category)} · ${fmtDate(t.date)}${who}</div></div>
-    <div class="amt" style="color:${inc ? 'var(--green)' : 'var(--red)'}">${inc ? '+' : '−'}${money(t.amount)}</div>`;
+    <div class="amt" style="color:${xfer ? 'var(--muted)' : inc ? 'var(--green)' : 'var(--red)'}">${xfer ? '⇄ ' : inc ? '+' : '−'}${money(t.amount)}</div>`;
   if (!mine(t)) return el;
   if (selMode) {
     const box = document.createElement('div'); box.className = 'selbox' + (selected.has(t.id) ? ' on' : '');
@@ -414,7 +415,7 @@ function fill(id, items, make, emptyMsg) {
 }
 
 function renderDash() {
-  const my = txs.filter(mine);
+  const my = txs.filter(mine).filter(counts);
   const sum = (arr, type) => arr.filter(t => t.type === type).reduce((s, t) => s + t.amount, 0);
   const bal = sum(my, 'income') - sum(my, 'expense');
   $('bal').textContent = (bal < 0 ? '−' : '') + money(bal);
@@ -423,7 +424,7 @@ function renderDash() {
   const myM = my.filter(t => t.date.startsWith(month));
   $('m-in').textContent = money(sum(myM, 'income'));
   $('m-out').textContent = money(sum(myM, 'expense'));
-  const sh = txs.filter(t => t.shared && t.type === 'expense' && t.date.startsWith(month));
+  const sh = txs.filter(t => counts(t) && t.shared && t.type === 'expense' && t.date.startsWith(month));
   const mineSh = sh.filter(mine).reduce((s, t) => s + t.amount, 0);
   const theirs = sh.filter(t => !mine(t)).reduce((s, t) => s + t.amount, 0);
   $('sh-total').textContent = money(mineSh + theirs);
@@ -480,7 +481,7 @@ function renderBills() {
 
 function renderSave() {
   const month = todayStr().slice(0,7);
-  const my = txs.filter(t => mine(t) && t.date.startsWith(month));
+  const my = txs.filter(t => mine(t) && counts(t) && t.date.startsWith(month));
   const inc = my.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const exp = my.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const kept = inc - exp, pct = inc > 0 ? Math.round(exp / inc * 100) : 0;
@@ -664,7 +665,7 @@ function showOcr() {
       const dup = !t.noAmt && txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
       const opts = (t.type === 'income' ? CATS.income : CATS.expense).map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('');
       return `<label class="ocr-row"><input type="checkbox" data-i="${i}" ${dup || t.skip || t.noAmt ? '' : 'checked'}>
-        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · looks like a payment, not spending. Unticked' : ''}${t.noAmt ? ' · couldn’t read the amount, type it in then tick' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
+        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · not a real charge. Unticked' : ''}${t.category === 'Transfer' ? ' · card payment, saved as a Transfer (not counted)' : ''}${t.noAmt ? ' · couldn’t read the amount, type it in then tick' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
         ${t.noAmt ? `<input class="ocr-amt" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$" data-i="${i}" oninput="this.closest('label').querySelector('input[type=checkbox]').checked = +this.value > 0">` : `<span class="amt" style="color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</span>`}</label>`;
     }).join('');
     setSeg('ocr-vis', 'v', 'private');
@@ -683,6 +684,7 @@ function loadTesseract() {
   });
 }
 const GUESS = [
+  [/payment[- ]?thank|payment received|bpay.*(american express|amex|mastercard|visa|credit card)|credit card payment/i, 'Transfer'],
   [/mcare|medicare|rebate|benefits/i, 'Refund'],
   [/woolworths|\bww\b|coles|aldi|iga|foodland|drakes|harris farm|costco/i, 'Groceries'],
   [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub\b|hotel|bakery|brewing|brewery|stomping|union club|zlr\*|rozzis/i, 'Dining'],
@@ -793,8 +795,8 @@ function parseRows(L, H) {
     const date = dl || own || it.below || ([...headers].reverse().find(h => h.y <= it.y) || {}).d
       || (allDates.sort((p, q) => Math.abs(p.y - it.y) - Math.abs(q.y - it.y))[0] || {}).d || todayStr();
     if (desc.length < 2) return null;
-    const repay = it.amount !== null && /payment[- ]?thank|payment received|thank you|waived|fee saved/i.test(desc);
-    const income = it.plus || it.cue || (it.amount !== null && creditNeg !== null && it.neg === creditNeg);
+    const repay = it.amount !== null && /waived|fee saved/i.test(desc);
+    const income = it.plus || (it.cue && !/payment[- ]?thank|payment received|thank you/i.test(desc)) || (it.amount !== null && creditNeg !== null && it.neg === creditNeg);
     return { description: desc.slice(0, 120), amount: it.amount, noAmt: it.amount === null, date, type: income ? 'income' : 'expense', category: guessCat(desc, income), skip: repay };
   }).filter(Boolean);
   return out.filter((t, i) => out.findIndex(u => u.description === t.description && u.amount === t.amount && u.date === t.date) === i);
@@ -818,8 +820,8 @@ async function freeOcr(file) {
 // ---- Shareable balance picture ----
 function shareNums() {
   const per = getSeg('share-per', 'v');
-  const my = txs.filter(mine).filter(t => per === 'all' || t.date.startsWith(todayStr().slice(0, 7)));
-  const all = txs.filter(mine), sum = (a, ty) => a.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
+  const my = txs.filter(mine).filter(counts).filter(t => per === 'all' || t.date.startsWith(todayStr().slice(0, 7)));
+  const all = txs.filter(mine).filter(counts), sum = (a, ty) => a.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
   return { per, inc: sum(my, 'income'), out: sum(my, 'expense'), bal: sum(all, 'income') - sum(all, 'expense') };
 }
 function drawShare() {
