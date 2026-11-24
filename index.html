@@ -80,7 +80,9 @@ input:focus,select:focus{border-color:var(--accent)}
 .close{float:right;background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1}
 .processing{background:rgba(91,141,238,.1);border:1px solid rgba(91,141,238,.3);border-radius:8px;padding:14px;font-size:13px;color:var(--accent);text-align:center;margin:12px 0}
 .ocr-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
-.ocr-row input{width:auto}
+.ocr-row input{width:24px;height:24px;flex:none;padding:0;border-radius:6px;background:var(--surface2);border:2px solid var(--muted);position:relative;cursor:pointer}
+.ocr-row input:checked{background:var(--accent);border-color:var(--accent)}
+.ocr-row input:checked::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
 .ocr-row span.d{flex:1}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{padding:5px 11px;border-radius:20px;font-size:13px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:var(--font)}
@@ -132,6 +134,7 @@ input:focus,select:focus{border-color:var(--accent)}
       <div class="stat"><div class="val" style="color:var(--green)" id="m-in">—</div><div class="lbl">in this month</div></div>
       <div class="stat"><div class="val" style="color:var(--red)" id="m-out">—</div><div class="lbl">out this month</div></div>
     </div>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="openShare()">Share my balance</button>
   </div>
   <div class="card">
     <div class="card-title">Shared spending this month</div>
@@ -229,6 +232,15 @@ input:focus,select:focus{border-color:var(--accent)}
   <div id="ocr-list"></div>
   <div class="form-group" style="margin-top:14px"><label>Who can see these</label><div class="seg" id="ocr-vis"><button data-v="private" class="on">Just me</button><button data-v="shared">Shared</button></div></div>
   <button class="btn btn-primary" onclick="importOcr()">Add selected</button>
+</div></div>
+
+<div class="overlay" id="share-modal"><div class="modal">
+  <button class="close" onclick="closeM('share-modal')" aria-label="Close">×</button>
+  <h3>Share my balance</h3>
+  <p class="hint" style="margin:-10px 0 12px">Makes a picture you can send. It only shows the totals below, not your transactions.</p>
+  <div class="seg" id="share-per"><button data-v="month" class="on">This month</button><button data-v="all">All time</button></div>
+  <canvas id="share-cv" width="1080" height="760" style="width:100%;border-radius:12px;margin:14px 0;display:block"></canvas>
+  <button class="btn btn-primary" onclick="sendShare()">Send picture</button>
 </div></div>
 
 <div id="toast"></div>
@@ -618,14 +630,14 @@ function loadTesseract() {
 }
 const GUESS = [
   [/woolworths|coles|aldi|iga|foodland|drakes|harris farm|costco/i, 'Groceries'],
-  [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub|hotel|bakery/i, 'Dining'],
+  [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub|hotel|bakery|brewing|brewery|stomping|union club|zlr\*|rozzis/i, 'Dining'],
   [/uber|didi|ola|taxi|metro|adelaide metro|myki|opal|translink|parking|toll|linkt/i, 'Transport'],
   [/bp\b|shell|ampol|caltex|7-?eleven|united petrol|puma|on the run|otr|fuel/i, 'Fuel'],
-  [/netflix|spotify|stan\b|disney|binge|kayo|apple\.com|icloud|google|youtube|amazon prime|audible|patreon/i, 'Subscriptions'],
-  [/agl|origin|energy|sa power|water|telstra|optus|vodafone|aussie broadband|internet|insurance|council/i, 'Bills'],
+  [/anthropic|claude|netflix|spotify|stan\b|disney|binge|kayo|apple\.com|icloud|google|youtube|amazon prime|audible|patreon/i, 'Subscriptions'],
+  [/tangerine|nib |mortgage|agl|origin|energy|sa power|water|telstra|optus|vodafone|aussie broadband|internet|insurance|council/i, 'Bills'],
   [/chemist|pharmacy|priceline|doctor|medical|dental|physio|hospital/i, 'Health'],
   [/cinema|hoyts|event|ticket|steam|playstation|xbox|nintendo/i, 'Entertainment'],
-  [/kmart|target|big w|bunnings|jb hi|officeworks|myer|david jones|amazon|ebay|temu|shein/i, 'Shopping'],
+  [/kmart|target|big w|bunnings|jb hi|jaycar|officeworks|myer|david jones|amazon|ebay|temu|shein/i, 'Shopping'],
   [/salary|wage|payroll|pay\b/i, 'Pay'], [/refund|reversal/i, 'Refund']
 ];
 const MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
@@ -639,28 +651,109 @@ function parseDateLine(line) {
   if (m) { let y = m[3] ? +m[3] : now.getFullYear(); if (y < 100) y += 2000; const d = new Date(y, +m[2] - 1, +m[1]); if (!isNaN(d)) return todayStr(d); }
   return null;
 }
+function prepImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const sc = Math.min(2, 2400 / Math.max(img.width, img.height)) || 1;
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      const d = g.getImageData(0, 0, c.width, c.height), px = d.data; let sum = 0;
+      for (let i = 0; i < px.length; i += 16) sum += px[i] * .3 + px[i+1] * .59 + px[i+2] * .11;
+      const dark = sum / (px.length / 16) < 110;
+      for (let i = 0; i < px.length; i += 4) {
+        let v = px[i] * .3 + px[i+1] * .59 + px[i+2] * .11;
+        if (dark) v = 255 - v;
+        v = Math.max(0, Math.min(255, (v - 128) * 1.6 + 128));
+        px[i] = px[i+1] = px[i+2] = v;
+      }
+      g.putImageData(d, 0, 0);
+      c.toBlob(b => resolve(b), 'image/png');
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That file isn’t an image the phone can open')); };
+    img.src = url;
+  });
+}
+const AMT = /([+\-−–]?)\s*[$S§]\s?(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\b/;
+const NOISE = /^(transactions|statements|notices|home|membership|offers|account|overview|plan it|show less|wallet|see \d|surepay|pay off|spend \$|expires|\d{1,2}:\d{2})/i;
 async function freeOcr(file) {
   await loadTesseract();
-  const { data } = await Tesseract.recognize(file, 'eng');
-  const lines = data.text.split('\n').map(l => l.trim()).filter(Boolean);
-  const out = []; let curDate = todayStr(), prev = '';
+  const img = await prepImage(file);
+  const { data } = await Tesseract.recognize(img, 'eng', { tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+  const lines = data.text.split('\n').map(l => l.replace(/[|•·_]+/g, ' ').replace(/\s+/g, ' ').trim()).filter(l => l.length > 1);
+  const out = []; let curDate = todayStr(), pending = [], last = null;
+  const flush = () => { pending = []; };
   for (const line of lines) {
     const dl = parseDateLine(line);
-    const am = line.match(/([+\-−–]?)\s*\$\s?(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})/) || line.match(/([+\-−–]?)\s*(\d{1,3}(?:,\d{3})*\.\d{2})\s*$/);
-    if (!am) { if (dl) curDate = dl; else prev = line; continue; }
-    const amount = parseFloat(am[2].replace(/,/g, ''));
-    if (!(amount > 0) || /balance|available|total/i.test(line)) continue;
-    let desc = line.slice(0, am.index).replace(/[|•·_*]+/g, ' ').replace(/\s+/g, ' ').trim();
-    if (dl) desc = desc.replace(/\b(today|yesterday)\b/i, '').trim();
-    if (desc.length < 3) desc = prev;
-    if (!desc || desc.length < 2) continue;
-    const income = am[1] === '+' || /refund|salary|payroll|deposit|transfer from|received/i.test(desc);
-    const cat = (GUESS.find(([re]) => re.test(desc)) || [null, 'Other'])[1];
-    out.push({ description: desc.slice(0, 120), amount, date: dl || curDate, type: income ? 'income' : 'expense',
-               category: income ? (CATS.income.includes(cat) ? cat : 'Other') : (CATS.expense.includes(cat) ? cat : 'Other') });
-    prev = '';
+    const am = line.match(AMT);
+    const dateOnly = dl && !am && line.replace(/[a-z0-9 ,.]/gi, '').length < 3 && /^(mon|tue|wed|thu|fri|sat|sun|\d)/i.test(line) && line.length < 40;
+    if (dateOnly) { curDate = dl; flush(); last = null; continue; }
+    if (am) {
+      const amount = parseFloat(am[2].replace(/,/g, ''));
+      if (/balance|available|total|spend this|get \$|back/i.test(line) || !(amount > 0)) { flush(); continue; }
+      let desc = line.slice(0, am.index).trim();
+      if (NOISE.test(desc)) desc = '';
+      if (desc.length < 3) desc = pending.join(' ');
+      desc = desc.replace(/\b(plan it)\b/ig, '').replace(/^[^a-z0-9]+/i, '').replace(/\s+/g, ' ').trim();
+      if (desc.length < 2) { flush(); continue; }
+      const income = am[1] === '+' || /refund|salary|payroll|deposit|transfer from|received|thank you|payment-thank/i.test(desc);
+      const cat = (GUESS.find(([re]) => re.test(desc)) || [null, 'Other'])[1];
+      last = { description: desc.slice(0, 120), amount, date: dl || curDate, type: income ? 'income' : 'expense',
+               category: income ? (CATS.income.includes(cat) ? cat : 'Other') : (CATS.expense.includes(cat) ? cat : 'Other') };
+      out.push(last); flush();
+    } else if (!NOISE.test(line)) {
+      if (dl) { curDate = dl; flush(); last = null; continue; }
+      // text with no amount: description for the next amount, or the location line of the last one
+      if (last && pending.length === 0 && last.description.length < 28 && /^[A-Z0-9 .\-,'\/&*]+$/.test(line) && line.length < 28) { last.description = (last.description + ' ' + line).slice(0, 120); }
+      else pending = [...pending, line].slice(-2);
+    }
   }
-  return out;
+  // drop exact duplicates created by OCR re-reads
+  return out.filter((t, i) => out.findIndex(u => u.description === t.description && u.amount === t.amount && u.date === t.date) === i);
+}
+
+// ---- Shareable balance picture ----
+function shareNums() {
+  const per = getSeg('share-per', 'v');
+  const my = txs.filter(mine).filter(t => per === 'all' || t.date.startsWith(todayStr().slice(0, 7)));
+  const all = txs.filter(mine), sum = (a, ty) => a.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
+  return { per, inc: sum(my, 'income'), out: sum(my, 'expense'), bal: sum(all, 'income') - sum(all, 'expense') };
+}
+function drawShare() {
+  const cv = $('share-cv'), g = cv.getContext('2d'), n = shareNums(), W = cv.width, H = cv.height;
+  g.fillStyle = '#1f3b2c'; g.fillRect(0, 0, W, H);
+  // logo, top left
+  g.save(); g.translate(70, 60); g.scale(.13, .13); g.translate(-295, -145);
+  const P = new Path2D('M380 1002 V330 Q380 230 480 230 H560 A170 170 0 0 1 560 570 H500');
+  g.lineJoin = 'round'; g.lineCap = 'butt';
+  [['#d7262b', 170], ['#f0701f', 112], ['#f7cf3d', 54]].forEach(([c, w]) => { g.strokeStyle = c; g.lineWidth = w; g.stroke(P); });
+  g.restore();
+  g.fillStyle = '#f4e6c4'; g.textBaseline = 'alphabetic';
+  g.font = '700 54px "DM Sans",sans-serif'; g.fillText('Penny', 160, 112);
+  g.font = '700 38px "DM Sans",sans-serif'; g.fillText('sen', 162, 160);
+  const w1 = g.measureText('sen').width; g.fillStyle = '#f7cf3d'; g.fillText('$', 162 + w1, 160);
+  const w2 = g.measureText('$').width; g.fillStyle = '#f4e6c4'; g.fillText('e', 162 + w1 + w2, 160);
+  // balance
+  g.fillStyle = 'rgba(244,230,196,.7)'; g.font = '500 34px "DM Sans",sans-serif'; g.fillText('Balance', 70, 330);
+  g.fillStyle = n.bal < 0 ? '#ff9a8a' : '#f4e6c4'; g.font = '700 150px "DM Sans",sans-serif';
+  g.fillText((n.bal < 0 ? '−' : '') + money(n.bal), 70, 470);
+  // in vs out
+  g.fillStyle = 'rgba(244,230,196,.18)'; g.fillRect(70, 540, W - 140, 3);
+  const col = (x, label, val, c) => { g.fillStyle = 'rgba(244,230,196,.7)'; g.font = '500 32px "DM Sans",sans-serif'; g.fillText(label, x, 610);
+    g.fillStyle = c; g.font = '700 64px "DM Sans",sans-serif'; g.fillText(money(val), x, 685); };
+  const lbl = n.per === 'all' ? 'all time' : new Date().toLocaleString('en-AU', { month: 'long' });
+  col(70, 'Coming in · ' + lbl, n.inc, '#7be0a8'); col(580, 'Going out · ' + lbl, n.out, '#ff9a8a');
+}
+function openShare() { setSeg('share-per', 'v', 'month'); drawShare(); openM('share-modal'); }
+document.addEventListener('click', e => { const b = e.target.closest('#share-per button'); if (b) { setSeg('share-per', 'v', b.dataset.v); drawShare(); } });
+async function sendShare() {
+  const blob = await new Promise(r => $('share-cv').toBlob(r, 'image/png'));
+  const file = new File([blob], 'penny-sense-balance.png', { type: 'image/png' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (err) { if (err.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+  toast('Saved the picture to your downloads.');
 }
 async function importOcr() {
   const shared = getSeg('ocr-vis', 'v') === 'shared';
