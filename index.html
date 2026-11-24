@@ -229,6 +229,9 @@ input:focus,select:focus{border-color:var(--accent)}
   <button class="close" onclick="closeM('ocr-modal')" aria-label="Close">×</button>
   <h3>Found transactions</h3>
   <p class="hint" style="margin:-10px 0 12px">Untick any you don't want. The screenshot has already been discarded.</p>
+  <div class="form-group"><label>Which card is this screenshot from?</label>
+    <select id="ocr-card" onchange="cardChanged()"></select>
+    <input id="ocr-card-new" placeholder="Card name, e.g. Amex" style="display:none;margin-top:8px" maxlength="30"></div>
   <div id="ocr-list"></div>
   <div class="form-group" style="margin-top:14px"><label>Who can see these</label><div class="seg" id="ocr-vis"><button data-v="private" class="on">Just me</button><button data-v="shared">Shared</button></div></div>
   <button class="btn btn-primary" onclick="importOcr()">Add selected</button>
@@ -351,7 +354,7 @@ function txRow(t) {
   const who = mine(t) ? '' : ' · ' + esc(names[t.user_id] || 'Partner');
   const badge = t.shared ? ' <span class="pill pill-shared">shared</span>' : '';
   el.innerHTML = `<div class="icon" style="background:${inc ? 'rgba(62,207,142,.15)' : 'rgba(242,107,107,.1)'}">${EMOJI[t.category] || '📌'}</div>
-    <div class="info"><div class="name">${esc(t.description)}${badge}</div><div class="meta">${esc(t.category)} · ${fmtDate(t.date)}${who}</div></div>
+    <div class="info"><div class="name">${esc(t.description)}${badge}</div><div class="meta">${t.card ? esc(t.card) + ' · ' : ''}${esc(t.category)} · ${fmtDate(t.date)}${who}</div></div>
     <div class="amt" style="color:${inc ? 'var(--green)' : 'var(--red)'}">${inc ? '+' : '−'}${money(t.amount)}</div>`;
   if (mine(t)) el.onclick = () => openTx(t);
   return el;
@@ -615,6 +618,7 @@ function showOcr() {
         <span class="amt" style="color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</span></label>`;
     }).join('');
     setSeg('ocr-vis', 'v', 'private');
+    buildCards();
     openM('ocr-modal');
 }
 
@@ -629,7 +633,7 @@ function loadTesseract() {
   });
 }
 const GUESS = [
-  [/woolworths|coles|aldi|iga|foodland|drakes|harris farm|costco/i, 'Groceries'],
+  [/woolworths|\bww\b|coles|aldi|iga|foodland|drakes|harris farm|costco/i, 'Groceries'],
   [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub|hotel|bakery|brewing|brewery|stomping|union club|zlr\*|rozzis/i, 'Dining'],
   [/uber|didi|ola|taxi|metro|adelaide metro|myki|opal|translink|parking|toll|linkt/i, 'Transport'],
   [/bp\b|shell|ampol|caltex|7-?eleven|united petrol|puma|on the run|otr|fuel/i, 'Fuel'],
@@ -755,11 +759,35 @@ async function sendShare() {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
   toast('Saved the picture to your downloads.');
 }
+
+// ---- Cards ----
+function cardList() { try { const c = JSON.parse(localStorage.getItem('ps_cards')); if (Array.isArray(c) && c.length) return c; } catch (e) {} return ['Amex', 'Mastercard', 'ANZ debit']; }
+function buildCards() {
+  const last = localStorage.getItem('ps_lastcard') || '';
+  $('ocr-card').innerHTML = '<option value="">Not sure</option>' + cardList().map(c => `<option ${c === last ? 'selected' : ''}>${esc(c)}</option>`).join('') + '<option value="__new">+ Add a card…</option>';
+  $('ocr-card-new').style.display = 'none';
+}
+function cardChanged() { $('ocr-card-new').style.display = $('ocr-card').value === '__new' ? 'block' : 'none'; if ($('ocr-card').value === '__new') $('ocr-card-new').focus(); }
+function chosenCard() {
+  let c = $('ocr-card').value;
+  if (c === '__new') {
+    c = $('ocr-card-new').value.trim().slice(0, 30);
+    if (c) { const l = cardList(); if (!l.includes(c)) { l.push(c); try { localStorage.setItem('ps_cards', JSON.stringify(l)); } catch (e) {} } }
+  }
+  try { localStorage.setItem('ps_lastcard', c || ''); } catch (e) {}
+  return c || null;
+}
 async function importOcr() {
   const shared = getSeg('ocr-vis', 'v') === 'shared';
-  const rows = [...$('ocr-list').querySelectorAll('input:checked')].map(cb => ({ ...ocrItems[+cb.dataset.i], shared }));
+  const card = chosenCard();
+  const rows = [...$('ocr-list').querySelectorAll('input:checked')].map(cb => ({ ...ocrItems[+cb.dataset.i], shared, card }));
   if (!rows.length) { closeM('ocr-modal'); return; }
-  const { error } = await sb.from('transactions').insert(rows);
+  let { error } = await sb.from('transactions').insert(rows);
+  if (error && /card/i.test(error.message)) {
+    // the card column hasn't been added in Supabase yet: save without it
+    ({ error } = await sb.from('transactions').insert(rows.map(({ card: _c, ...r }) => r)));
+    if (!error) toast('Saved, but the card name needs the one-line Supabase update to stick.');
+  }
   if (error) { toast('Couldn’t save: ' + error.message); return; }
   ocrItems = []; closeM('ocr-modal'); toast(`Added ${rows.length} transaction${rows.length === 1 ? '' : 's'}. Tap any to change its category.`); loadAll();
 }
