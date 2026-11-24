@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="Penny Sense">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0f1117">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Anonymous+Pro:wght@700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3347;--text:#e8eaf0;--muted:#7a8099;--accent:#5b8dee;--green:#3ecf8e;--red:#f26b6b;--amber:#f5a623;--radius:12px;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace}
@@ -252,7 +252,7 @@ input:focus,select:focus{border-color:var(--accent)}
   <h3>Share my balance</h3>
   <p class="hint" style="margin:-10px 0 12px">Makes a picture you can send. It only shows the totals below, not your transactions.</p>
   <div class="seg" id="share-per"><button data-v="month" class="on">This month</button><button data-v="all">All time</button></div>
-  <canvas id="share-cv" width="1080" height="760" style="width:100%;border-radius:12px;margin:14px 0;display:block"></canvas>
+  <canvas id="share-cv" width="1080" height="681" style="width:100%;margin:14px 0;display:block"></canvas>
   <button class="btn btn-primary" onclick="sendShare()">Send picture</button>
 </div></div>
 
@@ -822,33 +822,90 @@ function shareNums() {
   const per = getSeg('share-per', 'v');
   const my = txs.filter(mine).filter(counts).filter(t => per === 'all' || t.date.startsWith(todayStr().slice(0, 7)));
   const all = txs.filter(mine).filter(counts), sum = (a, ty) => a.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
-  return { per, inc: sum(my, 'income'), out: sum(my, 'expense'), bal: sum(all, 'income') - sum(all, 'expense') };
+  const d = new Date();
+  return { per, inc: sum(my, 'income'), out: sum(my, 'expense'), bal: sum(all, 'income') - sum(all, 'expense'),
+    name: ((names[me.id] || '').toUpperCase().slice(0, 14)), lbl: per === 'all' ? 'ALL TIME' : d.toLocaleString('en-AU', { month: 'short' }).toUpperCase().replace('.', ''),
+    thru: 'THRU ' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getFullYear()).slice(2) };
 }
-function drawShare() {
-  const cv = $('share-cv'), g = cv.getContext('2d'), n = shareNums(), W = cv.width, H = cv.height;
-  g.fillStyle = '#1f3b2c'; g.fillRect(0, 0, W, H);
-  // logo, top left
-  g.save(); g.translate(70, 60); g.scale(.13, .13); g.translate(-295, -145);
-  const P = new Path2D('M380 1002 V330 Q380 230 480 230 H560 A170 170 0 0 1 560 570 H500');
-  g.lineJoin = 'round'; g.lineCap = 'butt';
-  [['#d7262b', 170], ['#f0701f', 112], ['#f7cf3d', 54]].forEach(([c, w]) => { g.strokeStyle = c; g.lineWidth = w; g.stroke(P); });
+const SHARE_MONO = '"Anonymous Pro","Courier New",monospace', SHARE_SANS = '"DM Sans",sans-serif';
+function rgba(c){if(c[0]=='#'){const n=parseInt(c.slice(1),16);return[n>>16&255,n>>8&255,n&255,1]}const m=c.match(/[\d.]+/g).map(Number);return[m[0],m[1],m[2],m[3]==null?1:m[3]]}
+function mix(c,t,k){const a=rgba(c),b=t=='w'?[255,255,255]:[0,0,0];return `rgba(${a.map((v,i)=>i<3?Math.round(v+(b[i]-v)*k):v).join(',')})`}
+// raised, pressed-out lettering: shadow, stacked side walls, dark outline, light edge, shaded face
+function emboss(g,text,x,y,size,fill,track,fam,weight,lift){
+  lift=lift==null?.28:lift;
+  g.font=`${weight||700} ${size}px ${fam}`; let cx=x;
+  const N=Math.max(2,Math.round(size*.06)), dx=size*.012, dy=size*.014;
+  for(const ch of text){
+    g.save();g.shadowColor='rgba(0,0,0,.65)';g.shadowBlur=size*.1;g.shadowOffsetX=size*.06;g.shadowOffsetY=size*.075;
+    g.fillStyle='rgba(6,14,9,.9)';g.fillText(ch,cx+N*dx*1.2,y+N*dy*1.2);g.restore();           // soft cast shadow
+    for(let i=N;i>=1;i--){g.fillStyle=i>N*.6?'#07120b':'#10231a';g.fillText(ch,cx+i*dx*1.2,y+i*dy*1.2)}   // side walls
+    g.lineJoin='round';g.lineWidth=Math.max(1.5,size*.05);g.strokeStyle='rgba(5,12,8,.8)';g.strokeText(ch,cx,y);   // outline
+    g.fillStyle=lift<.2?mix(fill,'w',.35):'rgba(255,250,235,.55)';g.fillText(ch,cx-size*.024,y-size*.03);               // light on the top-left edge
+    const gr=g.createLinearGradient(0,y-size*.72,0,y+size*.05);gr.addColorStop(0,mix(fill,'w',lift));gr.addColorStop(.5,fill);gr.addColorStop(1,mix(fill,'k',.2));
+    g.fillStyle=gr;g.fillText(ch,cx,y);                                                          // face, lit from above
+    cx+=g.measureText(ch).width+track;
+  } return cx-track-x;
+}
+function etw(g,text,size,track,fam,weight){g.font=`${weight||700} ${size}px ${fam}`;let w=0;for(const ch of text)w+=g.measureText(ch).width+track;return w-track}
+function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function hologram(g,x,y,w,h){
+  g.save();g.globalAlpha=.09;rr(g,x,y,w,h,18);g.clip();
+  const gr=g.createLinearGradient(x,y+h,x+w,y);
+  ['#8fc4d4','#a7a0d4','#d29cc0','#d8bf8c','#9fd4ba','#8fc4d4'].forEach((c,i,a)=>gr.addColorStop(i/(a.length-1),c));
+  g.fillStyle=gr;g.fillRect(x,y,w,h);
+  g.globalAlpha=.09;g.strokeStyle='#fff';g.lineWidth=1;
+  for(let i=-h;i<w;i+=8){g.beginPath();g.moveTo(x+i,y+h);g.lineTo(x+i+h,y);g.stroke()}
+  g.globalAlpha=.1;g.lineWidth=1.2;
+  [[x+w*.4,y+h*.5],[x+w*.6,y+h*.5]].forEach(([cx,cy])=>{for(let r=10;r<w*.55;r+=10){g.beginPath();g.arc(cx,cy,r,0,7);g.stroke()}});
+  g.globalAlpha=1;
+  const gl=g.createLinearGradient(x,y,x+w,y+h);gl.addColorStop(0,'rgba(255,255,255,0)');gl.addColorStop(.44,'rgba(255,255,255,0)');gl.addColorStop(.5,'rgba(255,255,255,.035)');gl.addColorStop(.56,'rgba(255,255,255,0)');gl.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gl;g.fillRect(x,y,w,h);
+  const mx=x+w/2,my=y+h/2;
+  g.strokeStyle='rgba(255,255,255,.13)';g.lineWidth=3;g.beginPath();g.arc(mx,my,30,0,7);g.stroke();g.lineWidth=1.2;g.beginPath();g.arc(mx,my,25,0,7);g.stroke();
+  g.fillStyle='rgba(255,255,255,.13)';g.font=`700 36px ${SHARE_SANS}`;g.textAlign='center';g.textBaseline='alphabetic';g.fillText('$',mx,my+12);g.textAlign='left';
   g.restore();
-  g.fillStyle = '#f4e6c4'; g.textBaseline = 'alphabetic';
-  g.font = '700 54px "DM Sans",sans-serif'; g.fillText('Penny', 160, 112);
-  g.font = '700 38px "DM Sans",sans-serif'; g.fillText('sen', 162, 160);
-  const w1 = g.measureText('sen').width; g.fillStyle = '#f7cf3d'; g.fillText('$', 162 + w1, 160);
-  const w2 = g.measureText('$').width; g.fillStyle = '#f4e6c4'; g.fillText('e', 162 + w1 + w2, 160);
-  // balance
-  g.fillStyle = 'rgba(244,230,196,.7)'; g.font = '500 34px "DM Sans",sans-serif'; g.fillText('Balance', 70, 330);
-  g.fillStyle = n.bal < 0 ? '#ff9a8a' : '#f4e6c4'; g.font = '700 150px "DM Sans",sans-serif';
-  g.fillText((n.bal < 0 ? '−' : '') + money(n.bal), 70, 470);
-  // in vs out
-  g.fillStyle = 'rgba(244,230,196,.18)'; g.fillRect(70, 540, W - 140, 3);
-  const col = (x, label, val, c) => { g.fillStyle = 'rgba(244,230,196,.7)'; g.font = '500 32px "DM Sans",sans-serif'; g.fillText(label, x, 610);
-    g.fillStyle = c; g.font = '700 64px "DM Sans",sans-serif'; g.fillText(money(val), x, 685); };
-  const lbl = n.per === 'all' ? 'all time' : new Date().toLocaleString('en-AU', { month: 'long' });
-  col(70, 'Coming in · ' + lbl, n.inc, '#7be0a8'); col(580, 'Going out · ' + lbl, n.out, '#ff9a8a');
+  g.strokeStyle='rgba(255,255,255,.045)';g.lineWidth=1.5;rr(g,x,y,w,h,18);g.stroke();
 }
+async function drawShare(){
+  try{await Promise.all([document.fonts.load('700 40px "DM Sans"'),document.fonts.load('700 40px "Anonymous Pro"')])}catch(e){}
+  const cv=$('share-cv'),n=shareNums();
+  const g=cv.getContext('2d'),W=cv.width,H=cv.height;
+  g.clearRect(0,0,W,H);g.save();rr(g,0,0,W,H,46);g.clip();
+  g.fillStyle='#1f3b2c';g.fillRect(0,0,W,H);
+  hologram(g,822,46,196,128);
+  // logo (smaller)
+  const k=.21,X=58,Y=44;
+  g.save();g.translate(X,Y);g.scale(k,k);g.translate(-295,-145);
+  const P=new Path2D('M380 1002 V330 Q380 230 480 230 H560 A170 170 0 0 1 560 570 H500');
+  g.lineJoin='round';g.lineCap='butt';
+  [['#d7262b',170],['#f0701f',112],['#f7cf3d',54]].forEach(([c,w])=>{g.strokeStyle=c;g.lineWidth=w;g.stroke(P)});
+  g.restore();
+  const stemR=X+(465-295)*k,bowlB=Y+(655-145)*k,F1=39,x0=stemR+11;
+  g.fillStyle='#f4e6c4';g.textBaseline='alphabetic';g.font=`700 ${F1}px ${SHARE_SANS}`;
+  const base1=bowlB+F1*1.05;g.fillText('enny',x0,base1);
+  const wEnn=g.measureText('enn').width;let F2=40;g.font=`700 ${F2}px ${SHARE_SANS}`;
+  F2=F2*(wEnn-4)/g.measureText('sen$e').width;g.font=`700 ${F2}px ${SHARE_SANS}`;
+  const base2=base1+F1*.2+F2*.74;let x=x0;
+  g.fillText('sen',x,base2);x+=g.measureText('sen').width;g.fillStyle='#f7cf3d';g.fillText('$',x,base2);x+=g.measureText('$').width;g.fillStyle='#f4e6c4';g.fillText('e',x,base2);
+  // balance (shrinks to fit so it never runs into the chip)
+  const cream='#f4e6c4',green='#2fe58a',red='#ff5a48';
+  emboss(g,'BALANCE',58,322,26,'rgba(236,220,184,.8)',6,SHARE_MONO);
+  let bs=124;const bm=(n.bal<0?'-':'')+money(Math.abs(n.bal));g.font=`700 ${bs}px ${SHARE_MONO}`;const bw=g.measureText(bm).width+6*(bm.length-1);if(bw>600)bs=Math.floor(bs*600/bw);
+  emboss(g,bm,58,322+bs*.9,bs,cream,6,SHARE_MONO);
+  // chip + name, right of the balance
+  const cx=706,cy=346;
+  let ns=28;g.font=`700 ${ns}px ${SHARE_MONO}`;const nw=n.name.length*(ns*.6+5);if(nw>190)ns=Math.floor(ns*190/nw);
+  emboss(g,n.name,1022-etw(g,n.name,ns,5,SHARE_MONO),cy+38,ns,'#ecdcb8',5,SHARE_MONO);
+  emboss(g,n.thru,1022-etw(g,n.thru,19,4,SHARE_MONO),cy+72,19,'rgba(236,220,184,.8)',4,SHARE_MONO);
+  // divider + in / out
+  g.fillStyle='rgba(8,20,12,.5)';g.fillRect(58,492,W-116,2);g.fillStyle='rgba(255,250,235,.18)';g.fillRect(58,494,W-116,2);
+  emboss(g,'COMING IN / '+n.lbl,58,544,22,'rgba(236,220,184,.8)',4,SHARE_MONO);
+  emboss(g,'GOING OUT / '+n.lbl,570,544,22,'rgba(236,220,184,.8)',4,SHARE_MONO);
+  emboss(g,money(n.inc),58,616,58,green,3,SHARE_MONO,700,.05);
+  emboss(g,money(n.out),570,616,58,red,3,SHARE_MONO,700,.05);
+  g.restore();
+}
+
 function openShare() { setSeg('share-per', 'v', 'month'); drawShare(); openM('share-modal'); }
 document.addEventListener('click', e => { const b = e.target.closest('#share-per button'); if (b) { setSeg('share-per', 'v', b.dataset.v); drawShare(); } });
 async function sendShare() {
