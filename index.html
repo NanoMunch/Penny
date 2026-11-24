@@ -663,7 +663,7 @@ function showOcr() {
       const dup = txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
       const opts = (t.type === 'income' ? CATS.income : CATS.expense).map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('');
       return `<label class="ocr-row"><input type="checkbox" data-i="${i}" ${dup || t.skip ? '' : 'checked'}>
-        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · card repayment, unticked' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
+        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · looks like a payment, not spending. Unticked' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
         <span class="amt" style="color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</span></label>`;
     }).join('');
     setSeg('ocr-vis', 'v', 'private');
@@ -683,12 +683,12 @@ function loadTesseract() {
 }
 const GUESS = [
   [/woolworths|\bww\b|coles|aldi|iga|foodland|drakes|harris farm|costco/i, 'Groceries'],
-  [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub|hotel|bakery|brewing|brewery|stomping|union club|zlr\*|rozzis/i, 'Dining'],
-  [/uber|didi|ola|taxi|metro|adelaide metro|myki|opal|translink|parking|toll|linkt/i, 'Transport'],
+  [/uber ?eats|menulog|doordash|cafe|coffee|restaurant|pizza|mcdonald|kfc|hungry jack|subway|grill|sushi|bar\b|pub\b|hotel|bakery|brewing|brewery|stomping|union club|zlr\*|rozzis/i, 'Dining'],
+  [/public transport|ptv|uber|didi|ola|taxi|metro|adelaide metro|myki|opal|translink|parking|toll|linkt/i, 'Transport'],
   [/bp\b|shell|ampol|caltex|7-?eleven|united petrol|puma|on the run|otr|fuel/i, 'Fuel'],
   [/anthropic|claude|netflix|spotify|stan\b|disney|binge|kayo|apple\.com|icloud|google|youtube|amazon prime|audible|patreon/i, 'Subscriptions'],
   [/tangerine|nib |mortgage|agl|origin|energy|sa power|water|telstra|optus|vodafone|aussie broadband|internet|insurance|council/i, 'Bills'],
-  [/chemist|pharmacy|priceline|doctor|medical|dental|physio|hospital/i, 'Health'],
+  [/chemist|pharmacy|aquatic|gym\b|fitness|swim|priceline|doctor|medical|dental|physio|hospital/i, 'Health'],
   [/cinema|hoyts|event|ticket|steam|playstation|xbox|nintendo/i, 'Entertainment'],
   [/kmart|target|big w|bunnings|jb hi|jaycar|officeworks|myer|david jones|amazon|ebay|temu|shein/i, 'Shopping'],
   [/salary|wage|payroll|pay\b/i, 'Pay'], [/refund|reversal/i, 'Refund']
@@ -717,7 +717,6 @@ function prepImage(file) {
       for (let i = 0; i < px.length; i += 4) {
         let v = px[i] * .3 + px[i+1] * .59 + px[i+2] * .11;
         if (dark) v = 255 - v;
-        v = Math.max(0, Math.min(255, (v - 128) * 1.6 + 128));
         px[i] = px[i+1] = px[i+2] = v;
       }
       g.putImageData(d, 0, 0);
@@ -727,8 +726,8 @@ function prepImage(file) {
     img.src = url;
   });
 }
-const AMT = /([+\-−–]?)\s*[$S§]\s?(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\b/;
-const NOISE = /^(transactions|statements|notices|home|membership|offers|account|overview|plan it|show less|wallet|see \d|surepay|pay off|spend \$|expires|\d{1,2}:\d{2})/i;
+const AMT = /([+\-−–~]?)\s*[$S§]\s?(\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2})\b/;
+const NOISE = /^(sixt|car hire|spend \$|get \$|expires|offers?\b|transactions|statements|notices|home|membership|offers|account|overview|plan it|show less|wallet|see \d|surepay|pay off|spend \$|expires|\d{1,2}:\d{2})/i;
 function ruleKey(d) { return d.toUpperCase().replace(/^[A-Z]{2,4}\*/, '').replace(/[^A-Z ]/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).join(' '); }
 function getRules() { try { return JSON.parse(localStorage.getItem('ps_rules')) || {}; } catch (e) { return {}; } }
 function guessCat(desc, income) {
@@ -736,45 +735,63 @@ function guessCat(desc, income) {
   const cat = learned || (GUESS.find(([re]) => re.test(desc)) || [null, 'Other'])[1];
   return (income ? CATS.income : CATS.expense).includes(cat) ? cat : 'Other';
 }
+// Pair each amount with the text lines nearest to it on the screen
+function parseRows(L, H) {
+  const items = [], dates = [], texts = [];
+  for (const l of L) {
+    const raw = l.t;
+    if (/\bpresent\b|^card ending|^filter$|^\d{1,2}\s+\w+\s+\d{4}\s*[-–—]/i.test(raw)) continue;
+    const am = raw.match(AMT), dl = parseDateLine(raw);
+    if (am) {
+      const amount = parseFloat(am[2].replace(/,/g, ''));
+      if (!(amount > 0) || /balance|available|total|spend this|get \$|back/i.test(raw)) continue;
+      items.push({ y: l.y, amount, plus: am[1] === '+', pre: raw.slice(0, am.index), dl, lines: [] }); continue;
+    }
+    if (dl && raw.length < 40 && /^(mon|tue|wed|thu|fri|sat|sun|\d)/i.test(raw) && raw.replace(/[a-z0-9 ,.]/gi, '').length < 3) { dates.push({ y: l.y, d: dl }); continue; }
+    if (!NOISE.test(raw) && !/^(mon|tues?|wed(nes)?|thu(rs)?|fri|sat(ur)?|sun)(day)?$/i.test(raw) && !/^[^a-z0-9]{1,3}$/i.test(raw)) texts.push(l);
+  }
+  items.sort((p, q) => p.y - q.y);
+  const gaps = items.slice(1).map((it, i) => it.y - items[i].y).sort((p, q) => p - q);
+  const pitch = gaps.length ? gaps[Math.floor(gaps.length / 2)] : H * 0.1;
+  for (const t of texts) {
+    let best = null, bd = 1e9; for (const it of items) { const d = Math.abs(it.y - t.y); if (d < bd) { bd = d; best = it; } }
+    if (best && bd <= pitch * 0.8) best.lines.push(t);
+  }
+  const headers = [];
+  for (const d of dates) {
+    const prev = [...items].reverse().find(i => i.y <= d.y), next = items.find(i => i.y > d.y);
+    const dp = prev ? d.y - prev.y : 1e9, dn = next ? next.y - d.y : 1e9;
+    if (prev && dp < dn * 0.6 && dp < pitch * 0.8 && !prev.below) prev.below = d.d; else headers.push(d);
+  }
+  const allDates = dates.concat(items.filter(i => i.dl).map(i => ({ y: i.y, d: i.dl })));
+  const out = items.map(it => {
+    const own = parseDateLine(it.pre || '');
+    const date = it.dl || own || it.below || ([...headers].reverse().find(h => h.y <= it.y) || {}).d
+      || (allDates.sort((p, q) => Math.abs(p.y - it.y) - Math.abs(q.y - it.y))[0] || {}).d || todayStr();
+    const parts = it.lines.concat(it.pre.replace(/\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b/, '').trim().length > 1 ? [{ y: it.y, t: it.pre }] : []).sort((p, q) => p.y - q.y).map(x => x.t);
+    let desc = parts.join(' ').replace(/\b(plan it)\b/ig, '').replace(/\s+[A-Za-z]+ (&|and) [a-z]+$/, '').replace(/\b(\w+) \1\b/gi, '$1').replace(/\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b/g, '').replace(/^[^a-z0-9]+|[^a-z0-9.)]+$/gi, '').replace(/\s+/g, ' ').trim();
+    if (desc.length < 2) return null;
+    const repay = /payment[- ]?thank|payment received|thank you|waived|fee saved/i.test(desc);
+    const income = it.plus || /refund|salary|payroll|deposit|transfer from/i.test(desc);
+    return { description: desc.slice(0, 120), amount: it.amount, date, type: income ? 'income' : 'expense', category: guessCat(desc, income), skip: repay };
+  }).filter(Boolean);
+  return out.filter((t, i) => out.findIndex(u => u.description === t.description && u.amount === t.amount && u.date === t.date) === i);
+}
 async function freeOcr(file) {
   await loadTesseract();
   const img = await prepImage(file);
-  const { data } = await Tesseract.recognize(img, 'eng', { tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
-  const lines = data.text.split('\n').map(l => l.replace(/[|•·_]+/g, ' ').replace(/\s+/g, ' ').trim()).filter(l => l.length > 1);
-  const seq = []; let pending = [], last = null;   // seq holds dates and transactions in reading order
-  for (const raw of lines) {
-    if (/\bpresent\b|^card ending|^filter$|^\d{1,2}\s+\w+\s+\d{4}\s*[-–—]/i.test(raw)) continue; // date-range header
-    const dl = parseDateLine(raw), am = raw.match(AMT);
-    const dateOnly = dl && !am && raw.length < 40 && /^(mon|tue|wed|thu|fri|sat|sun|\d)/i.test(raw) && raw.replace(/[a-z0-9 ,.]/gi, '').length < 3;
-    if (dateOnly) { seq.push({ d: dl }); pending = []; last = null; continue; }
-    if (am) {
-      const amount = parseFloat(am[2].replace(/,/g, ''));
-      if (/balance|available|total|spend this|get \$|back/i.test(raw) || !(amount > 0)) { pending = []; continue; }
-      let desc = raw.slice(0, am.index).trim();
-      if (NOISE.test(desc)) desc = '';
-      if (desc.length < 3) desc = pending.join(' ');
-      desc = desc.replace(/^\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\s*/, '').replace(/\b(plan it)\b/ig, '').replace(/^[^a-z0-9]+/i, '').replace(/\s+/g, ' ').trim();
-      if (desc.length < 2) { pending = []; continue; }
-      const repay = /payment[- ]?thank|payment received|thank you/i.test(desc);
-      const income = am[1] === '+' || /refund|salary|payroll|deposit|transfer from/i.test(desc);
-      last = { description: desc.slice(0, 120), amount, date: dl || null, type: income ? 'income' : 'expense', category: guessCat(desc, income), skip: repay };
-      seq.push(last); pending = [];
-    } else if (!NOISE.test(raw)) {
-      if (dl) { seq.push({ d: dl }); pending = []; last = null; continue; }
-      if (last && pending.length === 0 && last.description.length < 28 && /^[A-Z0-9 .\-,'\/&*]+$/.test(raw) && raw.length < 28) { last.description = (last.description + ' ' + raw).slice(0, 120); last.category = guessCat(last.description, last.type === 'income'); }
-      else pending = [...pending, raw].slice(-2);
-    }
-  }
-  // Dates either head a group (above) or sit under each row (below)
-  const above = seq.length && seq[0].d !== undefined, out = [];
-  let cur = null, waiting = [];
-  for (const e of seq) {
-    if (e.d !== undefined) {
-      if (above) cur = e.d; else { waiting.forEach(t => { if (!t.date) t.date = e.d; }); waiting = []; cur = e.d; }
-    } else { if (above && !e.date) e.date = cur; if (!above && !e.date) waiting.push(e); out.push(e); }
-  }
-  out.forEach(t => { if (!t.date) t.date = cur || todayStr(); });
-  return out.filter((t, i) => out.findIndex(u => u.description === t.description && u.amount === t.amount && u.date === t.date) === i);
+  const worker = await Tesseract.createWorker('eng');
+  let data;
+  try { await worker.setParameters({ tessedit_pageseg_mode: '11', preserve_interword_spaces: '1' }); ({ data } = await worker.recognize(img, {}, { blocks: true })); }
+  finally { await worker.terminate(); }
+  let ls = data.lines;
+  if (!ls || !ls.length) ls = (data.blocks || []).flatMap(b => (b.paragraphs || []).flatMap(p => p.lines || []));
+  let L0 = (ls || []).filter(l => l.bbox && l.text).map(l => ({ text: l.text, y0: l.bbox.y0, y1: l.bbox.y1 }));
+  if (!L0.length && data.tsv) { const g = {}; data.tsv.split('\n').forEach(r => { const c = r.split('\t'); if (c[0] === '5' && c[11] && c[11].trim()) { const k = c[2] + '-' + c[3] + '-' + c[4], t = +c[7], b = t + +c[9]; const o = g[k] || (g[k] = { w: [], y0: t, y1: b }); o.w.push(c[11]); o.y0 = Math.min(o.y0, t); o.y1 = Math.max(o.y1, b); } }); L0 = Object.values(g).map(o => ({ text: o.w.join(' '), y0: o.y0, y1: o.y1 })); }
+  const L = L0.map(l => ({ t: l.text.replace(/[|•·_]+/g, ' ').replace(/\s+/g, ' ').trim(), y: (l.y0 + l.y1) / 2 })).filter(l => l.t.length > 1);
+  if (!L.length) throw new Error('Couldn’t read any text from that image');
+  const H = Math.max(...L0.map(l => l.y1)) || 2000;
+  return parseRows(L, H);
 }
 // ---- Shareable balance picture ----
 function shareNums() {
