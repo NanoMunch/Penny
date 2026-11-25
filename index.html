@@ -10,11 +10,39 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Penny Sense">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#0f1117">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Anonymous+Pro:wght@700&display=swap" rel="stylesheet">
+<meta name="theme-color" id="theme-color" content="#0f1117">
+<script>try{var t=localStorage.getItem('ps_theme');if(t==='green'){document.documentElement.dataset.theme='green';document.getElementById('theme-color').content='#16281e'}}catch(e){}</script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Anonymous+Pro:wght@400;700&family=Fraunces:opsz,wght@9..144,600;9..144,800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3347;--text:#e8eaf0;--muted:#7a8099;--accent:#5b8dee;--green:#3ecf8e;--red:#f26b6b;--amber:#f5a623;--radius:12px;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace}
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3347;--text:#e8eaf0;--muted:#7a8099;--accent:#5b8dee;--green:#3ecf8e;--red:#f26b6b;--amber:#f5a623;--accent-soft:rgba(91,141,238,.15);--accent-soft2:rgba(91,141,238,.1);--accent-line:rgba(91,141,238,.3);--green-soft:rgba(62,207,142,.15);--red-soft:rgba(242,107,107,.1);--grey-soft:rgba(138,146,176,.15);--shade:rgba(0,0,0,.7);--on-accent:#fff;--radius:12px;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace}
+/* Logo green theme: the icon's forest green with its red/orange/yellow, cream text with a touch of legal-pad yellow */
+:root[data-theme=green]{--bg:#16281e;--surface:#1f3b2c;--surface2:#2a4b39;--border:#3b5f49;--text:#f4e6c4;--muted:#a4b79f;--accent:#f7cf3d;--on-accent:#1b2a1f;--green:#58e39a;--red:#ff6b57;--amber:#f0701f;
+  --accent-soft:rgba(247,207,61,.16);--accent-soft2:rgba(247,207,61,.1);--accent-line:rgba(247,207,61,.35);--green-soft:rgba(88,227,154,.16);--red-soft:rgba(255,107,87,.14);--grey-soft:rgba(164,183,159,.18);--shade:rgba(5,12,8,.72)}
+:root[data-theme=green]{--mono:'Anonymous Pro','DM Mono',monospace;--radius:16px}
+:root[data-theme=green] header{border-bottom:4px solid transparent;border-image:linear-gradient(90deg,#d7262b 0 33%,#f0701f 33% 66%,#f7cf3d 66% 100%) 1;padding-bottom:10px}
+:root[data-theme=green] header h1,:root[data-theme=green] .section-header h2,:root[data-theme=green] .modal h3{font-family:'Fraunces',Georgia,serif;font-weight:800;letter-spacing:.01em}
+:root[data-theme=green] header h1{font-size:21px}
+:root[data-theme=green] .card{position:relative;overflow:hidden;padding-left:28px;border:2px solid #0d1a12;box-shadow:4px 4px 0 #0d1a12}
+:root[data-theme=green] .card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:9px;background:linear-gradient(90deg,#d7262b 0 33%,#f0701f 33% 66%,#f7cf3d 66% 100%)}
+:root[data-theme=green] .card-title,:root[data-theme=green] .balance-label,:root[data-theme=green] .stat .lbl,:root[data-theme=green] label{font-family:'Anonymous Pro',monospace;font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase}
+:root[data-theme=green] .balance-amount{font-weight:700;font-size:44px;letter-spacing:0;color:#f4e6c4;text-shadow:2px 2px 0 #0d1a12}
+:root[data-theme=green] .stat .val,:root[data-theme=green] .amt{font-weight:700}
+:root[data-theme=green] .stat{border:2px solid #0d1a12;border-radius:10px}
+:root[data-theme=green] .btn{border-radius:12px;font-weight:600}
+:root[data-theme=green] .btn-primary{box-shadow:0 4px 0 #a07f10;transition:none}
+:root[data-theme=green] .btn-primary:active{transform:translateY(3px);box-shadow:0 1px 0 #a07f10;opacity:1}
+:root[data-theme=green] .btn-secondary{border:2px solid #0d1a12;box-shadow:0 3px 0 #0d1a12}
+:root[data-theme=green] .item{border:2px solid #0d1a12;border-radius:12px}
+:root[data-theme=green] .swipe{border-radius:12px}
+:root[data-theme=green] .list{gap:6px}
+:root[data-theme=green] nav button{font-family:'Anonymous Pro',monospace;font-weight:700;font-size:13px;letter-spacing:.03em;text-transform:uppercase;padding-left:2px;padding-right:2px}
+:root[data-theme=green] nav button.active{border-bottom-width:4px}
+:root[data-theme=green] .modal{border:2px solid #0d1a12;border-bottom:none;border-top:6px solid #f7cf3d}
+:root[data-theme=green] .seg{border:2px solid #0d1a12}
+:root[data-theme=green] .tag,:root[data-theme=green] .month-btn{border:2px solid #0d1a12;font-weight:600}
+:root[data-theme=green] .meter-bar{height:10px;border-radius:5px;border:2px solid #0d1a12}
+:root[data-theme=green] .meter-fill{border-radius:0;background:repeating-linear-gradient(90deg,var(--green) 0 10px,#3fbf7a 10px 12px)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
 header{display:flex;align-items:center;gap:10px;padding:12px 16px 4px;max-width:480px;margin:0 auto}
@@ -41,7 +69,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .btn{display:block;width:100%;padding:13px;border-radius:8px;border:none;font-family:var(--font);font-size:15px;font-weight:500;cursor:pointer}
 .btn:active{opacity:.8}
 .btn:focus-visible,nav button:focus-visible,.tag:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.btn-primary{background:var(--accent);color:#fff}
+.btn-primary{background:var(--accent);color:var(--on-accent)}
 .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
 .btn-danger{background:transparent;color:var(--red);border:1px solid var(--red)}
 .btn-sm{display:inline-block;width:auto;padding:7px 14px;font-size:13px}
@@ -53,7 +81,7 @@ input:focus,select:focus{border-color:var(--accent)}
 .swipe-del{position:absolute;right:0;top:0;bottom:0;width:90px;border:none;background:var(--red);color:#fff;font:600 15px var(--font);cursor:pointer}
 .selbox{width:24px;height:24px;flex:none;border-radius:6px;border:2px solid var(--muted);position:relative}
 .selbox.on{background:var(--accent);border-color:var(--accent)}
-.selbox.on::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.selbox.on::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid var(--on-accent);border-width:0 3px 3px 0;transform:rotate(45deg)}
 #sel-bar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:150;gap:10px;align-items:center;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--border)}
 #sel-bar .btn{width:auto;flex:1}
 .icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
@@ -64,8 +92,8 @@ input:focus,select:focus{border-color:var(--accent)}
 .amt{font-family:var(--mono);font-size:15px;font-weight:500;flex-shrink:0}
 .x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;padding:0 4px;flex-shrink:0}
 .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
-.pill-shared{background:rgba(91,141,238,.15);color:var(--accent)}
-.pill-paid{background:rgba(62,207,142,.15);color:var(--green)}
+.pill-shared{background:var(--accent-soft);color:var(--accent)}
+.pill-paid{background:var(--green-soft);color:var(--green)}
 .tip{padding:14px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--accent);margin-bottom:10px}
 .tip-title{font-size:13px;font-weight:600;margin-bottom:4px}
 .tip-body{font-size:13px;color:var(--muted);line-height:1.5}
@@ -81,28 +109,33 @@ input:focus,select:focus{border-color:var(--accent)}
 .section-header h2{font-size:17px;font-weight:600}
 .divider{border:none;border-top:1px solid var(--border);margin:20px 0}
 .empty{text-align:center;color:var(--muted);font-size:14px;padding:28px 0}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;display:none;align-items:flex-end;justify-content:center}
+.overlay{position:fixed;inset:0;background:var(--shade);z-index:200;display:none;align-items:flex-end;justify-content:center}
 .overlay.open{display:flex}
 .modal{background:var(--surface);border-radius:var(--radius) var(--radius) 0 0;padding:24px 20px calc(36px + env(safe-area-inset-bottom));width:100%;max-width:480px;border:1px solid var(--border);border-bottom:none;max-height:90vh;overflow-y:auto}
 .modal h3{font-size:17px;font-weight:600;margin-bottom:20px}
 .close{float:right;background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1}
-.processing{background:rgba(91,141,238,.1);border:1px solid rgba(91,141,238,.3);border-radius:8px;padding:14px;font-size:13px;color:var(--accent);text-align:center;margin:12px 0}
+.processing{background:var(--accent-soft2);border:1px solid var(--accent-line);border-radius:8px;padding:14px;font-size:13px;color:var(--accent);text-align:center;margin:12px 0}
 .ocr-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
-.ocr-row input{width:24px;height:24px;flex:none;padding:0;border-radius:6px;background:var(--surface2);border:2px solid var(--muted);position:relative;cursor:pointer}
-.ocr-row input:checked{background:var(--accent);border-color:var(--accent)}
-.ocr-row input:checked::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid #fff;border-width:0 3px 3px 0;transform:rotate(45deg)}
+.ocr-row input[type=checkbox]{width:24px;height:24px;flex:none;padding:0;border-radius:6px;background:var(--surface2);border:2px solid var(--muted);position:relative;cursor:pointer}
+.ocr-row input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+.ocr-row input[type=checkbox]:checked::after{content:'';position:absolute;left:6px;top:1px;width:6px;height:12px;border:solid var(--on-accent);border-width:0 3px 3px 0;transform:rotate(45deg)}
 .ocr-row span.d{flex:1}
-.ocr-row input.ocr-amt{width:84px;height:auto;flex:none;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface2);font-size:15px}
+.ocr-row{align-items:flex-start}
+.ocr-row>input[type=checkbox]{margin-top:10px}
+.ocr-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.ocr-line{display:flex;gap:6px}
+.ocr-line>*{flex:1;min-width:0}
+.ocr-fields input,.ocr-fields select{width:100%;padding:8px 10px;font-size:15px;border-radius:8px}
 .ocr-cat{display:block;margin-top:6px;padding:6px 10px;font-size:14px;width:auto;border-radius:6px}
 .tags{display:flex;flex-wrap:wrap;gap:6px}
 .tag{padding:5px 11px;border-radius:20px;font-size:13px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);cursor:pointer;font-family:var(--font)}
-.tag.selected{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tag.selected{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .months{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px}
 .month-btn{flex-shrink:0;padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:none;color:var(--muted);font-size:13px;cursor:pointer;font-family:var(--font)}
-.month-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.month-btn.active{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
 .seg{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px}
 .seg button{flex:1;padding:9px;border:none;background:none;color:var(--muted);font-family:var(--font);font-size:14px;border-radius:6px;cursor:pointer}
-.seg button.on{background:var(--accent);color:#fff}
+.seg button.on{background:var(--accent);color:var(--on-accent)}
 .hint{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
 #toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);padding:10px 16px;border-radius:20px;font-size:13px;z-index:300;display:none;max-width:90%}
 #auth{max-width:380px;margin:0 auto;padding:40px 20px}
@@ -199,6 +232,11 @@ input:focus,select:focus{border-color:var(--accent)}
     <button class="btn btn-primary" onclick="saveName()">Save name</button>
   </div>
   <div class="card">
+    <div class="card-title">App colours</div>
+    <div class="seg" id="theme-seg"><button data-v="dark">Classic dark</button><button data-v="green">Logo green</button></div>
+    <p class="hint">Saved on this phone only, so you and your partner can each pick your own.</p>
+  </div>
+  <div class="card">
     <div class="card-title">Screenshot reading</div>
     <div class="form-group"><label for="s-key">Anthropic API key</label><input id="s-key" type="password" placeholder="sk-ant-api…" autocomplete="off"></div>
     <button class="btn btn-secondary" onclick="saveKey()">Save key on this phone</button>
@@ -218,6 +256,9 @@ input:focus,select:focus{border-color:var(--accent)}
   <div class="form-group"><label for="tx-desc">What for</label><input id="tx-desc" placeholder="e.g. Woolworths"></div>
   <div class="form-group"><label for="tx-amt">Amount ($)</label><input id="tx-amt" type="number" inputmode="decimal" step="0.01"></div>
   <div class="form-group"><label>Category</label><div class="tags" id="tx-cats"></div></div>
+  <div class="form-group"><label for="tx-card">Card or account</label>
+    <select id="tx-card" onchange="$('tx-card-new').style.display=this.value==='__new'?'block':'none';if(this.value==='__new')$('tx-card-new').focus()"></select>
+    <input id="tx-card-new" placeholder="Card name, e.g. Amex" style="display:none;margin-top:8px" maxlength="30"></div>
   <div class="form-group"><label for="tx-date">Date</label><input id="tx-date" type="date"></div>
   <div class="form-group"><label>Who can see it</label><div class="seg" id="tx-vis"><button data-v="private" class="on">Just me</button><button data-v="shared">Shared</button></div></div>
   <button class="btn btn-primary" id="tx-save">Save</button>
@@ -237,14 +278,15 @@ input:focus,select:focus{border-color:var(--accent)}
 
 <div class="overlay" id="ocr-modal"><div class="modal">
   <button class="close" onclick="closeM('ocr-modal')" aria-label="Close">×</button>
-  <h3>Found transactions</h3>
-  <p class="hint" style="margin:-10px 0 12px">Untick any you don't want. The screenshot has already been discarded.</p>
+  <h3>Check these transactions</h3>
+  <p class="hint" style="margin:-10px 0 12px" id="ocr-hint">Tap any field to fix it, untick any you don't want. The screenshot has already been discarded.</p>
   <div class="form-group"><label>Which card is this screenshot from?</label>
     <select id="ocr-card" onchange="cardChanged()"></select>
     <input id="ocr-card-new" placeholder="Card name, e.g. Amex" style="display:none;margin-top:8px" maxlength="30"></div>
   <div id="ocr-list"></div>
+  <button class="btn btn-secondary btn-sm" style="margin-top:10px" onclick="addOcrRow()">+ Add a row</button>
   <div class="form-group" style="margin-top:14px"><label>Who can see these</label><div class="seg" id="ocr-vis"><button data-v="private" class="on">Just me</button><button data-v="shared">Shared</button></div></div>
-  <button class="btn btn-primary" onclick="importOcr()">Add selected</button>
+  <button class="btn btn-primary" onclick="importOcr()">Add ticked</button>
 </div></div>
 
 <div class="overlay" id="share-modal"><div class="modal">
@@ -366,7 +408,7 @@ function txRow(t) {
   const inc = t.type === 'income', xfer = t.category === 'Transfer';
   const who = mine(t) ? '' : ' · ' + esc(names[t.user_id] || 'Partner');
   const badge = t.shared ? ' <span class="pill pill-shared">shared</span>' : '';
-  el.innerHTML = `<div class="icon" style="background:${xfer ? 'rgba(138,146,176,.15)' : inc ? 'rgba(62,207,142,.15)' : 'rgba(242,107,107,.1)'}">${EMOJI[t.category] || '📌'}</div>
+  el.innerHTML = `<div class="icon" style="background:${xfer ? 'var(--grey-soft)' : inc ? 'var(--green-soft)' : 'var(--red-soft)'}">${EMOJI[t.category] || '📌'}</div>
     <div class="info"><div class="name">${esc(t.description)}${badge}</div><div class="meta">${t.card ? esc(t.card) + ' · ' : ''}${esc(t.category)} · ${fmtDate(t.date)}${who}</div></div>
     <div class="amt" style="color:${xfer ? 'var(--muted)' : inc ? 'var(--green)' : 'var(--red)'}">${xfer ? '⇄ ' : inc ? '+' : '−'}${money(t.amount)}</div>`;
   if (!mine(t)) return el;
@@ -551,6 +593,9 @@ function openTx(t = null) {
   $('tx-amt').value = t ? t.amount : '';
   $('tx-date').value = t ? t.date : todayStr();
   setSeg('tx-vis', 'v', t?.shared ? 'shared' : 'private');
+  const cl = cardList(); if (t?.card && !cl.includes(t.card)) cl.push(t.card);
+  $('tx-card').innerHTML = '<option value="">No card / not sure</option>' + cl.map(c => `<option${c === t?.card ? ' selected' : ''}>${esc(c)}</option>`).join('') + '<option value="__new">+ Add a card…</option>';
+  $('tx-card-new').style.display = 'none'; $('tx-card-new').value = '';
   $('tx-del').style.display = t ? 'block' : 'none';
   openM('tx-modal');
   if (!t) setTimeout(() => $('tx-desc').focus(), 50);
@@ -561,8 +606,18 @@ $('tx-save').onclick = async () => {
     category: txCat, date: $('tx-date').value, shared: getSeg('tx-vis', 'v') === 'shared'
   };
   if (!row.description || !(row.amount > 0) || !row.date) { toast('Add a description, an amount and a date.'); return; }
-  const q = editing ? sb.from('transactions').update(row).eq('id', editing.id) : sb.from('transactions').insert(row);
-  const { error } = await q;
+  let card = $('tx-card').value;
+  if (card === '__new') {
+    card = $('tx-card-new').value.trim().slice(0, 30);
+    if (card) { const l = cardList(); if (!l.includes(card)) { l.push(card); try { localStorage.setItem('ps_cards', JSON.stringify(l)); } catch (e) {} } }
+  }
+  row.card = card || null;
+  const save = r => editing ? sb.from('transactions').update(r).eq('id', editing.id) : sb.from('transactions').insert(r);
+  let { error } = await save(row);
+  if (error && /card/i.test(error.message)) {
+    ({ error } = await save((({ card: _c, ...r }) => r)(row)));
+    if (!error) toast('Saved, but the card name needs the one-line Supabase update to stick.');
+  }
   if (error) { toast('Couldn’t save: ' + error.message); return; }
   closeM('tx-modal'); toast(editing ? 'Saved' : 'Added'); loadAll();
 };
@@ -654,23 +709,54 @@ $('shot').onchange = async e => {
                    type: t.type === 'income' ? 'income' : 'expense', category: [...CATS.expense, ...CATS.income].includes(t.category) ? t.category : 'Other' }));
     showOcr();
   } catch (err) {
-    status.innerHTML = `<div class="tip" style="border-left-color:var(--red)"><div class="tip-title">Couldn’t read the screenshot</div><div class="tip-body">${esc(err.message)}. Try a clearer screenshot, or add the transactions with + Add.</div></div>`;
+    ocrItems = []; ocrNote = `Couldn’t read that screenshot (${err.message || 'unknown error'}). Type the transactions in below.`; showOcr();
   }
 };
+let ocrNote = '';
+const blankOcr = () => ({ description: '', amount: '', date: todayStr(), type: 'expense', category: 'Other', blank: true });
+function syncOcr() {
+  $('ocr-list').querySelectorAll('.ocr-row').forEach(r => {
+    const t = ocrItems[+r.dataset.i]; if (!t) return;
+    t.checked = r.querySelector('input[type=checkbox]').checked;
+    t.description = r.querySelector('.ocr-desc').value;
+    t.amount = r.querySelector('.ocr-amt').value;
+    t.date = r.querySelector('.ocr-date').value || todayStr();
+    t.type = r.querySelector('.ocr-type').value;
+    t.category = r.querySelector('.ocr-cat').value;
+  });
+}
+function renderOcr() {
+  $('ocr-list').innerHTML = ocrItems.map((t, i) => {
+    if (t.origCat === undefined) t.origCat = t.category;
+    if (t.checked === undefined) {
+      const dup0 = !t.noAmt && !t.blank && txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
+      t.checked = !(dup0 || t.skip || t.noAmt);
+    }
+    const dup = !t.noAmt && !t.blank && txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
+    const list = t.type === 'income' ? CATS.income : CATS.expense;
+    if (!list.includes(t.category)) t.category = 'Other';
+    const opts = list.map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('');
+    const notes = [dup ? 'already logged?' : '', t.skip ? 'not a real charge, unticked' : '', t.category === 'Transfer' ? 'card payment, saved as a Transfer (not counted)' : '', t.noAmt ? 'couldn’t read the amount, type it in' : ''].filter(Boolean).join(' · ');
+    return `<div class="ocr-row" data-i="${i}"><input type="checkbox" ${t.checked ? 'checked' : ''} aria-label="Include">
+      <div class="ocr-fields">
+        <input class="ocr-desc" value="${esc(t.description)}" placeholder="Description" maxlength="120">
+        <div class="ocr-line"><input class="ocr-amt" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Amount $" value="${t.amount === '' ? '' : t.amount}"><input class="ocr-date" type="date" value="${t.date}"></div>
+        <div class="ocr-line"><select class="ocr-type" onchange="syncOcr();renderOcr()"><option value="expense"${t.type === 'income' ? '' : ' selected'}>Money out</option><option value="income"${t.type === 'income' ? ' selected' : ''}>Money in</option></select><select class="ocr-cat">${opts}</select></div>
+        ${notes ? `<span class="meta">${notes}</span>` : ''}
+      </div><button class="x" onclick="removeOcrRow(${i})" aria-label="Remove row">×</button></div>`;
+  }).join('');
+}
+function addOcrRow() { syncOcr(); ocrItems.push(blankOcr()); renderOcr(); const d = $('ocr-list').querySelectorAll('.ocr-desc'); d[d.length - 1]?.focus(); }
+function removeOcrRow(i) { syncOcr(); ocrItems.splice(i, 1); renderOcr(); }
 function showOcr() {
-    const status = $('ocr-status');
-    status.innerHTML = '';
-    if (!ocrItems.length) { status.innerHTML = '<div class="tip"><div class="tip-title">No transactions found</div><div class="tip-body">Try a screenshot that shows the transaction list clearly, with amounts visible.</div></div>'; return; }
-    $('ocr-list').innerHTML = ocrItems.map((t, i) => {
-      const dup = !t.noAmt && txs.some(x => mine(x) && x.date === t.date && Math.abs(x.amount - t.amount) < 0.005);
-      const opts = (t.type === 'income' ? CATS.income : CATS.expense).map(c => `<option${c === t.category ? ' selected' : ''}>${c}</option>`).join('');
-      return `<label class="ocr-row"><input type="checkbox" data-i="${i}" ${dup || t.skip || t.noAmt ? '' : 'checked'}>
-        <span class="d">${esc(t.description)}<br><span class="meta">${fmtDate(t.date)}${dup ? ' · already logged?' : ''}${t.skip ? ' · not a real charge. Unticked' : ''}${t.category === 'Transfer' ? ' · card payment, saved as a Transfer (not counted)' : ''}${t.noAmt ? ' · couldn’t read the amount, type it in then tick' : ''}</span><select class="ocr-cat" data-i="${i}">${opts}</select></span>
-        ${t.noAmt ? `<input class="ocr-amt" type="number" step="0.01" min="0" inputmode="decimal" placeholder="$" data-i="${i}" oninput="this.closest('label').querySelector('input[type=checkbox]').checked = +this.value > 0">` : `<span class="amt" style="color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${money(t.amount)}</span>`}</label>`;
-    }).join('');
-    setSeg('ocr-vis', 'v', 'private');
-    buildCards();
-    openM('ocr-modal');
+  $('ocr-status').innerHTML = '';
+  if (!ocrItems.length) { if (!ocrNote) ocrNote = 'No transactions were found in that screenshot. Type them in below.'; ocrItems = [blankOcr()]; }
+  $('ocr-hint').textContent = ocrNote || 'Tap any field to fix it, untick any you don’t want. The screenshot has already been discarded.';
+  ocrNote = '';
+  renderOcr();
+  setSeg('ocr-vis', 'v', 'private');
+  buildCards();
+  openM('ocr-modal');
 }
 
 // Free on-phone reading with Tesseract (no key needed)
@@ -906,6 +992,15 @@ async function drawShare(){
   g.restore();
 }
 
+function appTheme() { try { return localStorage.getItem('ps_theme') === 'green' ? 'green' : 'dark'; } catch (e) { return 'dark'; } }
+function applyTheme(v) {
+  try { localStorage.setItem('ps_theme', v); } catch (e) {}
+  if (v === 'green') document.documentElement.dataset.theme = 'green'; else delete document.documentElement.dataset.theme;
+  $('theme-color').content = v === 'green' ? '#16281e' : '#0f1117';
+  setSeg('theme-seg', 'v', v);
+}
+setSeg('theme-seg', 'v', appTheme());
+document.addEventListener('click', e => { const b = e.target.closest('#theme-seg button'); if (b) applyTheme(b.dataset.v); });
 function openShare() { setSeg('share-per', 'v', 'month'); drawShare(); openM('share-modal'); }
 document.addEventListener('click', e => { const b = e.target.closest('#share-per button'); if (b) { setSeg('share-per', 'v', b.dataset.v); drawShare(); } });
 async function sendShare() {
@@ -939,15 +1034,13 @@ async function importOcr() {
   const shared = getSeg('ocr-vis', 'v') === 'shared';
   const card = chosenCard();
   const rules = getRules();
-  const rows = [...$('ocr-list').querySelectorAll('input:checked')].map(cb => {
-    const i = +cb.dataset.i, it = ocrItems[i], cat = $('ocr-list').querySelector(`select[data-i="${i}"]`).value;
-    if (cat !== it.category && cat !== 'Other') rules[ruleKey(it.description)] = cat;
-    const { skip, noAmt, ...rest } = it;
-    if (noAmt) rest.amount = parseFloat($('ocr-list').querySelector(`input.ocr-amt[data-i="${i}"]`).value);
-    return { ...rest, category: cat, shared, card };
-  }).filter(r => r.amount > 0);
+  syncOcr();
+  const rows = ocrItems.filter(t => t.checked && String(t.description).trim() && parseFloat(t.amount) > 0).map(t => {
+    if (t.category !== t.origCat && t.category !== 'Other') rules[ruleKey(t.description)] = t.category;
+    return { description: String(t.description).trim().slice(0, 120), amount: Math.round(parseFloat(t.amount) * 100) / 100, date: t.date, type: t.type, category: t.category, shared, card };
+  });
   try { localStorage.setItem('ps_rules', JSON.stringify(rules)); } catch (e) {}
-  if (!rows.length) { closeM('ocr-modal'); return; }
+  if (!rows.length) { toast('Nothing ticked with a description and amount yet.'); return; }
   let { error } = await sb.from('transactions').insert(rows);
   if (error && /card/i.test(error.message)) {
     // the card column hasn't been added in Supabase yet: save without it
