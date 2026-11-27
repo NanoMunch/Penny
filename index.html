@@ -170,14 +170,15 @@ input:focus,select:focus{border-color:var(--accent)}
 
 <div id="view-dashboard" class="view active">
   <div class="card">
-    <div class="card-title">Your balance (only you can see this)</div>
+    <div class="card-title" id="bal-title">Your balance (only you can see this)</div>
     <div class="balance-amount" id="bal">—</div>
-    <div class="balance-label">all income minus all spending you've logged</div>
+    <div class="balance-label" id="bal-sub"></div>
+    <button class="btn btn-secondary btn-sm" style="margin-top:10px" id="bal-btn" onclick="openBal()">Set my bank balance</button>
     <div class="row">
       <div class="stat"><div class="val" style="color:var(--green)" id="m-in">—</div><div class="lbl">in this month</div></div>
       <div class="stat"><div class="val" style="color:var(--red)" id="m-out">—</div><div class="lbl">out this month</div></div>
     </div>
-    <button class="btn btn-primary" style="margin-top:14px" onclick="openShare()">Share my balance</button>
+    <button class="btn btn-primary" style="margin-top:14px" onclick="openShare()">Share my month</button>
   </div>
   <div class="card">
     <div class="card-title">Shared spending this month</div>
@@ -211,6 +212,17 @@ input:focus,select:focus{border-color:var(--accent)}
 </div>
 
 <div id="view-save" class="view">
+  <div class="card">
+    <div class="card-title">Where you stand</div>
+    <div id="stand"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Savings goals</div>
+    <div id="goals"></div>
+    <div class="form-group" style="margin-top:10px"><input id="g-name" placeholder="Goal, e.g. Holiday" maxlength="40"></div>
+    <div class="form-group"><input id="g-amt" type="number" inputmode="decimal" step="1" placeholder="Target $, e.g. 3000"></div>
+    <button class="btn btn-primary" onclick="addGoal()">Add goal</button>
+  </div>
   <div class="card">
     <div class="card-title">This month</div>
     <div style="font-size:14px">Kept <span id="sv-amt" style="font-weight:600">—</span></div>
@@ -289,11 +301,20 @@ input:focus,select:focus{border-color:var(--accent)}
   <button class="btn btn-primary" onclick="importOcr()">Add ticked</button>
 </div></div>
 
+<div class="overlay" id="bal-modal"><div class="modal">
+  <button class="close" onclick="closeM('bal-modal')" aria-label="Close">×</button>
+  <h3>Your bank balance</h3>
+  <p class="hint" style="margin:-10px 0 12px">Type what your bank app shows right now. From here, Penny Sense adds what you log and keeps the balance current. Only you can see it, and it never goes on the shared picture.</p>
+  <div class="form-group"><label for="bal-in">Balance right now ($)</label><input id="bal-in" type="number" inputmode="decimal" step="0.01"></div>
+  <button class="btn btn-primary" onclick="saveBal()">Save balance</button>
+  <button class="btn btn-secondary" id="bal-clear" style="margin-top:10px" onclick="clearBal()">Go back to the logged total</button>
+</div></div>
+
 <div class="overlay" id="share-modal"><div class="modal">
   <button class="close" onclick="closeM('share-modal')" aria-label="Close">×</button>
-  <h3>Share my balance</h3>
-  <p class="hint" style="margin:-10px 0 12px">Makes a picture you can send. It only shows the totals below, not your transactions.</p>
-  <div class="seg" id="share-per"><button data-v="month" class="on">This month</button><button data-v="all">All time</button></div>
+  <h3>Share my month</h3>
+  <p class="hint" style="margin:-10px 0 12px">Shows only money in and money out. Your balance is never on it.</p>
+  <div class="seg" id="share-per"><button data-v="month" class="on">This month</button><button data-v="last">Last month</button><button data-v="three">3 months</button></div>
   <canvas id="share-cv" width="1080" height="681" style="width:100%;margin:14px 0;display:block"></canvas>
   <button class="btn btn-primary" onclick="sendShare()">Send picture</button>
 </div></div>
@@ -400,7 +421,7 @@ async function loadAll() {
 }
 
 // ── render ──
-function renderAll() { renderDash(); renderMonths(); renderTx(); renderBills(); renderSave(); }
+function renderAll() { renderDash(); renderMonths(); renderTx(); renderBills(); renderSave(); renderStand(); renderGoals(); }
 
 function txRow(t) {
   const el = document.createElement('div');
@@ -456,10 +477,69 @@ function fill(id, items, make, emptyMsg) {
   items.forEach(i => box.appendChild(make(i)));
 }
 
+// ---- Real bank balance (typed in, then kept current from what you log) ----
+function getAnchor() { try { const a = JSON.parse(localStorage.getItem('ps_anchor')); if (a && isFinite(a.amount) && a.date) return a; } catch (e) {} return null; }
+function balanceInfo() {
+  const my = txs.filter(mine).filter(counts), a = getAnchor();
+  const sum = (arr, ty) => arr.filter(t => t.type === ty).reduce((s, t) => s + t.amount, 0);
+  if (!a) return { bal: sum(my, 'income') - sum(my, 'expense'), anchor: null };
+  const after = my.filter(t => t.date >= a.date && (!t.created_at || !a.ts || new Date(t.created_at).getTime() > a.ts));
+  return { bal: a.amount + sum(after, 'income') - sum(after, 'expense'), anchor: a };
+}
+function openBal() { const { bal } = balanceInfo(); $('bal-in').value = getAnchor() ? '' : ''; $('bal-clear').style.display = getAnchor() ? 'block' : 'none'; openM('bal-modal'); setTimeout(() => $('bal-in').focus(), 50); }
+function saveBal() {
+  const v = parseFloat($('bal-in').value);
+  if (!isFinite(v)) { toast('Type your balance first.'); return; }
+  try { localStorage.setItem('ps_anchor', JSON.stringify({ amount: v, date: todayStr(), ts: Date.now() })); } catch (e) {}
+  closeM('bal-modal'); renderAll(); toast('Balance saved');
+}
+function clearBal() { try { localStorage.removeItem('ps_anchor'); } catch (e) {} closeM('bal-modal'); renderAll(); }
+function standNums() {
+  const { bal, anchor } = balanceInfo(), d = new Date();
+  const lim = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 30), limS = lim.getFullYear() + '-' + String(lim.getMonth() + 1).padStart(2, '0') + '-' + String(lim.getDate()).padStart(2, '0');
+  const due = bills.filter(b => !b.paid && b.payer !== 'partner' && b.due_date <= limS).reduce((s, b) => s + b.amount, 0);
+  const my = txs.filter(mine).filter(counts), cur = todayStr().slice(0, 7), per = {};
+  my.forEach(t => { const m = t.date.slice(0, 7); if (m >= cur) return; (per[m] = per[m] || { i: 0, o: 0 })[t.type === 'income' ? 'i' : 'o'] += t.amount; });
+  let ms = Object.keys(per).sort().slice(-3);
+  if (!ms.length) { const c = { i: 0, o: 0 }; my.filter(t => t.date.startsWith(cur)).forEach(t => c[t.type === 'income' ? 'i' : 'o'] += t.amount); per[cur] = c; ms = [cur]; }
+  const avgIn = ms.reduce((s, m) => s + per[m].i, 0) / ms.length, avgOut = ms.reduce((s, m) => s + per[m].o, 0) / ms.length;
+  return { bal, anchor, due, free: bal - due, avgIn, avgOut, kept: avgIn - avgOut, months: ms.length };
+}
+const neg = n => (n < 0 ? '−' : '') + money(n);
+function renderStand() {
+  const st = standNums(), row = (a, b, c) => `<div class="meter-label" style="margin:6px 0"><span>${a}</span><span style="font-weight:600;${c ? 'color:' + c : ''}">${b}</span></div>`;
+  $('stand').innerHTML = row(st.anchor ? 'Bank balance (estimate)' : 'Logged balance', neg(st.bal)) + row('Bills due in the next 30 days', '−' + money(st.due), 'var(--amber)') +
+    row('Free after bills', neg(st.free), st.free < 0 ? 'var(--red)' : 'var(--green)') +
+    `<div class="balance-label" style="margin:12px 0 4px">A typical month${st.months > 1 ? ' (last ' + st.months + ')' : ''}</div>` +
+    row('Money in', money(st.avgIn), 'var(--green)') + row('Money out', money(st.avgOut), 'var(--red)') + row('Kept', neg(st.kept), st.kept < 0 ? 'var(--red)' : 'var(--green)') +
+    (st.anchor ? '' : '<div class="balance-label" style="margin-top:10px">Set your real bank balance on the Overview tab so this matches your bank.</div>');
+}
+// ---- Savings goals, paid for from the free balance in the order listed ----
+function getGoals() { try { const g = JSON.parse(localStorage.getItem('ps_goals')); if (Array.isArray(g)) return g; } catch (e) {} return []; }
+function putGoals(g) { try { localStorage.setItem('ps_goals', JSON.stringify(g)); } catch (e) {} }
+function addGoal() {
+  const name = $('g-name').value.trim().slice(0, 40), target = parseFloat($('g-amt').value);
+  if (!name || !(target > 0)) { toast('Add a goal name and a target amount.'); return; }
+  const g = getGoals(); g.push({ name, target }); putGoals(g); $('g-name').value = ''; $('g-amt').value = ''; renderGoals();
+}
+function delGoal(i) { if (!confirm('Remove this goal?')) return; const g = getGoals(); g.splice(i, 1); putGoals(g); renderGoals(); }
+function renderGoals() {
+  const goals = getGoals(), st = standNums(); let pool = Math.max(0, st.free);
+  $('goals').innerHTML = goals.length ? goals.map((g, i) => {
+    const have = Math.min(g.target, pool); pool -= have; const left = g.target - have, pct = Math.round(have / g.target * 100);
+    const eta = left <= 0.005 ? 'Covered by what you have free right now.' : st.kept > 0 ? `${money(left)} to go. About ${Math.ceil(left / st.kept)} month${Math.ceil(left / st.kept) === 1 ? '' : 's'} at ${money(st.kept)} kept a month.` : `${money(left)} to go. Keep more than you spend each month to get there.`;
+    return `<div style="margin-bottom:14px;position:relative;padding-right:30px"><div class="meter-label"><span>${esc(g.name)}</span><span>${money(have)} of ${money(g.target)}</span></div>
+      <div class="meter-bar"><div class="meter-fill" style="width:${pct}%;background:var(--green)"></div></div>
+      <div class="balance-label">${eta}</div><button class="x" style="position:absolute;right:0;top:0" onclick="delGoal(${i})" aria-label="Remove goal">×</button></div>`;
+  }).join('') : '<div class="balance-label">Add something to save for. Penny Sense counts what you have free after bills toward it.</div>';
+}
 function renderDash() {
   const my = txs.filter(mine).filter(counts);
   const sum = (arr, type) => arr.filter(t => t.type === type).reduce((s, t) => s + t.amount, 0);
-  const bal = sum(my, 'income') - sum(my, 'expense');
+  const { bal, anchor } = balanceInfo();
+  $('bal-title').textContent = anchor ? 'Bank balance (only you can see this)' : 'Your balance (only you can see this)';
+  $('bal-sub').textContent = anchor ? `Set to your real balance on ${fmtDate(anchor.date)}, then adjusted by everything you've logged since.` : 'All income minus all spending you\'ve logged. Set your real bank balance to make this match your bank.';
+  $('bal-btn').textContent = anchor ? 'Update to my real balance' : 'Set my bank balance';
   $('bal').textContent = (bal < 0 ? '−' : '') + money(bal);
   $('bal').style.color = bal < 0 ? 'var(--red)' : 'var(--text)';
   const month = todayStr().slice(0,7);
@@ -905,13 +985,14 @@ async function freeOcr(file) {
 }
 // ---- Shareable balance picture ----
 function shareNums() {
-  const per = getSeg('share-per', 'v');
-  const my = txs.filter(mine).filter(counts).filter(t => per === 'all' || t.date.startsWith(todayStr().slice(0, 7)));
-  const all = txs.filter(mine).filter(counts), sum = (a, ty) => a.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
-  const d = new Date();
-  return { per, inc: sum(my, 'income'), out: sum(my, 'expense'), bal: sum(all, 'income') - sum(all, 'expense'),
-    name: ((names[me.id] || '').toUpperCase().slice(0, 14)), lbl: per === 'all' ? 'ALL TIME' : d.toLocaleString('en-AU', { month: 'short' }).toUpperCase().replace('.', ''),
-    thru: 'THRU ' + String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getFullYear()).slice(2) };
+  const per = getSeg('share-per', 'v'), d = new Date(), ym = dt => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+  const back = per === 'last' ? 1 : 0, count = per === 'three' ? 3 : 1, months = [];
+  for (let i = back; i < back + count; i++) months.push(ym(new Date(d.getFullYear(), d.getMonth() - i, 1)));
+  const my = txs.filter(mine).filter(counts).filter(t => months.includes(t.date.slice(0, 7))), sum = ty => my.filter(t => t.type === ty).reduce((x, t) => x + t.amount, 0);
+  const end = new Date(d.getFullYear(), d.getMonth() - back, 1), short = dt => dt.toLocaleString('en-AU', { month: 'short' }).toUpperCase().replace('.', '');
+  const inc = sum('income'), out = sum('expense');
+  return { per, inc, out, pct: inc > 0 ? Math.round(out / inc * 100) : null, name: ((names[me.id] || '').toUpperCase().slice(0, 14)),
+    lbl: per === 'three' ? '3 MONTHS' : short(end), thru: 'THRU ' + String(end.getMonth() + 1).padStart(2, '0') + '/' + String(end.getFullYear()).slice(2) };
 }
 const SHARE_MONO = '"Anonymous Pro","Courier New",monospace', SHARE_SANS = '"DM Sans",sans-serif';
 function rgba(c){if(c[0]=='#'){const n=parseInt(c.slice(1),16);return[n>>16&255,n>>8&255,n&255,1]}const m=c.match(/[\d.]+/g).map(Number);return[m[0],m[1],m[2],m[3]==null?1:m[3]]}
@@ -973,22 +1054,27 @@ async function drawShare(){
   F2=F2*(wEnn-4)/g.measureText('sen$e').width;g.font=`700 ${F2}px ${SHARE_SANS}`;
   const base2=base1+F1*.2+F2*.74;let x=x0;
   g.fillText('sen',x,base2);x+=g.measureText('sen').width;g.fillStyle='#f7cf3d';g.fillText('$',x,base2);x+=g.measureText('$').width;g.fillStyle='#f4e6c4';g.fillText('e',x,base2);
-  // balance (shrinks to fit so it never runs into the chip)
-  const cream='#f4e6c4',green='#2fe58a',red='#ff5a48';
-  emboss(g,'BALANCE',58,322,26,'rgba(236,220,184,.8)',6,SHARE_MONO);
-  let bs=124;const bm=(n.bal<0?'-':'')+money(Math.abs(n.bal));g.font=`700 ${bs}px ${SHARE_MONO}`;const bw=g.measureText(bm).width+6*(bm.length-1);if(bw>600)bs=Math.floor(bs*600/bw);
-  emboss(g,bm,58,322+bs*.9,bs,cream,6,SHARE_MONO);
-  // chip + name, right of the balance
-  const cx=706,cy=346;
-  let ns=28;g.font=`700 ${ns}px ${SHARE_MONO}`;const nw=n.name.length*(ns*.6+5);if(nw>190)ns=Math.floor(ns*190/nw);
+  const cream='#f4e6c4',green='#2fe58a',red='#ff5a48',LAB='rgba(236,220,184,.8)';
+  const fit=(txt,sz,maxw)=>{g.font=`700 ${sz}px ${SHARE_MONO}`;const w=g.measureText(txt).width+6*(txt.length-1);return w>maxw?Math.floor(sz*maxw/w):sz};
+  // money in (big)
+  emboss(g,'COMING IN / '+n.lbl,58,322,26,LAB,6,SHARE_MONO);
+  const is=fit(money(n.inc),112,640);
+  emboss(g,money(n.inc),58,322+is*.9,is,green,6,SHARE_MONO,700,.05);
+  // name + thru, right side
+  const cy=346;let ns=28;g.font=`700 ${ns}px ${SHARE_MONO}`;const nw=n.name.length*(ns*.6+5);if(nw>190)ns=Math.floor(ns*190/nw);
   emboss(g,n.name,1022-etw(g,n.name,ns,5,SHARE_MONO),cy+38,ns,'#ecdcb8',5,SHARE_MONO);
-  emboss(g,n.thru,1022-etw(g,n.thru,19,4,SHARE_MONO),cy+72,19,'rgba(236,220,184,.8)',4,SHARE_MONO);
-  // divider + in / out
-  g.fillStyle='rgba(8,20,12,.5)';g.fillRect(58,492,W-116,2);g.fillStyle='rgba(255,250,235,.18)';g.fillRect(58,494,W-116,2);
-  emboss(g,'COMING IN / '+n.lbl,58,544,22,'rgba(236,220,184,.8)',4,SHARE_MONO);
-  emboss(g,'GOING OUT / '+n.lbl,570,544,22,'rgba(236,220,184,.8)',4,SHARE_MONO);
-  emboss(g,money(n.inc),58,616,58,green,3,SHARE_MONO,700,.05);
-  emboss(g,money(n.out),570,616,58,red,3,SHARE_MONO,700,.05);
+  emboss(g,n.thru,1022-etw(g,n.thru,19,4,SHARE_MONO),cy+72,19,LAB,4,SHARE_MONO);
+  // in vs out bar
+  const bx=58,bw=W-116,by=458,bh=18,share=n.pct==null?0:Math.min(1,n.pct/100);
+  g.save();rr(g,bx,by,bw,bh,9);g.clip();g.fillStyle='rgba(47,229,138,.32)';g.fillRect(bx,by,bw,bh);
+  if(share>0){const rg=g.createLinearGradient(0,by,0,by+bh);rg.addColorStop(0,'#ff7a68');rg.addColorStop(1,'#d9402f');g.fillStyle=rg;g.fillRect(bx,by,Math.max(bh,bw*share),bh)}g.restore();
+  g.strokeStyle='rgba(5,12,8,.75)';g.lineWidth=2.5;rr(g,bx,by,bw,bh,9);g.stroke();
+  const pt=n.pct==null?'NO INCOME LOGGED':n.pct>100?`SPENT ${n.pct}% OF INCOME`:`SPENT ${n.pct}% OF INCOME`;
+  emboss(g,pt,58,505,19,LAB,4,SHARE_MONO);
+  // money out (big)
+  emboss(g,'GOING OUT / '+n.lbl,58,552,26,LAB,6,SHARE_MONO);
+  const os=fit(money(n.out),94,900);
+  emboss(g,money(n.out),58,552+os*.88,os,red,6,SHARE_MONO,700,.05);
   g.restore();
 }
 
@@ -1005,7 +1091,7 @@ function openShare() { setSeg('share-per', 'v', 'month'); drawShare(); openM('sh
 document.addEventListener('click', e => { const b = e.target.closest('#share-per button'); if (b) { setSeg('share-per', 'v', b.dataset.v); drawShare(); } });
 async function sendShare() {
   const blob = await new Promise(r => $('share-cv').toBlob(r, 'image/png'));
-  const file = new File([blob], 'penny-sense-balance.png', { type: 'image/png' });
+  const file = new File([blob], 'penny-sense-in-out.png', { type: 'image/png' });
   try {
     if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
   } catch (err) { if (err.name === 'AbortError') return; }
