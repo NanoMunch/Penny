@@ -208,6 +208,7 @@ input:focus,select:focus{border-color:var(--accent)}
 
 <div id="view-bills" class="view">
   <div class="section-header"><h2>Bills</h2><button class="btn btn-primary btn-sm" onclick="openBill()">+ Add bill</button></div>
+  <div class="card" id="bill-tally"></div>
   <div class="list" id="bill-list"></div>
   <p class="hint" style="text-align:center">Bills are shared. Tap one to mark it paid. Repeating bills move to their next due date.</p>
 </div>
@@ -231,6 +232,12 @@ input:focus,select:focus{border-color:var(--accent)}
     <div class="meter-bar"><div class="meter-fill" id="sv-bar" style="width:0"></div></div>
   </div>
   <div id="tips"></div>
+  <div class="card">
+    <div class="card-title">Expected pay each month</div>
+    <div class="form-group"><input type="number" inputmode="decimal" id="pay" placeholder="e.g. 4200"></div>
+    <div class="balance-label" style="margin:-4px 0 12px">Penny Sense works from this figure until your pay actually lands, then switches to what you received if it’s more.</div>
+    <button class="btn btn-primary" onclick="savePay()">Save expected pay</button>
+  </div>
   <div class="card">
     <div class="card-title">Monthly savings goal</div>
     <div class="form-group"><input type="number" inputmode="decimal" id="goal" placeholder="e.g. 500"></div>
@@ -259,8 +266,8 @@ input:focus,select:focus{border-color:var(--accent)}
     <button class="btn btn-secondary" onclick="exportData()" style="margin-bottom:10px">Download my data</button>
     <button class="btn btn-danger" onclick="signOut()">Sign out</button>
   </div>
-</div>
   <p class="hint" style="text-align:center;margin:18px 0">Version 28 Nov: bank balance, goals, month sharing</p>
+</div>
 </div>
 
 <div class="overlay" id="tx-modal"><div class="modal">
@@ -396,7 +403,7 @@ async function start(user) {
   $('auth').style.display = 'none'; $('app').style.display = 'block';
   const { data: prof } = await sb.from('profiles').select('id').eq('id', me.id).maybeSingle();
   if (!prof) await sb.from('profiles').insert({ id: me.id, name: me.user_metadata?.name || me.email.split('@')[0] });
-  try { $('s-key').value = localStorage.getItem('ps_key') || ''; $('goal').value = localStorage.getItem('ps_goal') || ''; } catch (e) {}
+  try { $('s-key').value = localStorage.getItem('ps_key') || ''; $('goal').value = localStorage.getItem('ps_goal') || ''; $('pay').value = localStorage.getItem('ps_pay') || ''; } catch (e) {}
   await loadAll();
   sb.channel('penny')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, queueLoad)
@@ -505,16 +512,29 @@ function standNums() {
   let ms = Object.keys(per).sort().slice(-3);
   if (!ms.length) { const c = { i: 0, o: 0 }; my.filter(t => t.date.startsWith(cur)).forEach(t => c[t.type === 'income' ? 'i' : 'o'] += t.amount); per[cur] = c; ms = [cur]; }
   const avgIn = ms.reduce((s, m) => s + per[m].i, 0) / ms.length, avgOut = ms.reduce((s, m) => s + per[m].o, 0) / ms.length;
-  return { bal, anchor, due, free: bal - due, avgIn, avgOut, kept: avgIn - avgOut, months: ms.length };
+  const cm = my.filter(t => t.date.startsWith(cur)), mIn = cm.filter(t => t.type === 'income').reduce((x, t) => x + t.amount, 0), mOut = cm.filter(t => t.type === 'expense').reduce((x, t) => x + t.amount, 0);
+  const eom = new Date(d.getFullYear(), d.getMonth() + 1, 0), eomS = cur + '-' + String(eom.getDate()).padStart(2, '0');
+  const mDue = bills.filter(b => !b.paid && b.payer !== 'partner' && b.due_date <= eomS).reduce((x, b) => x + b.amount, 0);
+  let goal = 0, pay = 0; try { goal = parseFloat(localStorage.getItem('ps_goal')) || 0; pay = parseFloat(localStorage.getItem('ps_pay')) || 0; } catch (e) {}
+  const base = Math.max(pay, mIn), pending = base - mIn;
+  return { bal, anchor, due, free: bal - due, pay, base, pending, endBal: bal + pending - mDue, avgIn, avgOut, kept: avgIn - avgOut, months: ms.length, mIn, mOut, mDue, mFree: base - mOut - mDue, goal };
 }
 const neg = n => (n < 0 ? '−' : '') + money(n);
 function renderStand() {
-  const st = standNums(), row = (a, b, c) => `<div class="meter-label" style="margin:6px 0"><span>${a}</span><span style="font-weight:600;${c ? 'color:' + c : ''}">${b}</span></div>`;
-  $('stand').innerHTML = row(st.anchor ? 'Bank balance (estimate)' : 'Logged balance', neg(st.bal)) + row('Bills due in the next 30 days', '−' + money(st.due), 'var(--amber)') +
-    row('Free after bills', neg(st.free), st.free < 0 ? 'var(--red)' : 'var(--green)') +
-    `<div class="balance-label" style="margin:12px 0 4px">A typical month${st.months > 1 ? ' (last ' + st.months + ')' : ''}</div>` +
+  const st = standNums(), row = (a, b, c, bold) => `<div class="meter-label" style="margin:6px 0"><span${bold ? ' style="font-weight:600;color:var(--text)"' : ''}>${a}</span><span style="font-weight:600;${c ? 'color:' + c : ''}">${b}</span></div>`;
+  const pct = st.base > 0 ? Math.max(0, Math.min(100, Math.round(st.mFree / st.base * 100))) : 0, after = st.mFree - st.goal;
+  $('stand').innerHTML = row('Money in this month', money(st.mIn), 'var(--green)') + (st.pending > 0.005 ? row('Expected pay still to come', '+' + money(st.pending), 'var(--green)') : '') +
+    row('Money out so far', money(st.mOut), 'var(--red)') + row('Bills still to pay', '−' + money(st.mDue), 'var(--amber)') +
+    row('Free after bills', neg(st.mFree), st.mFree < 0 ? 'var(--red)' : 'var(--green)', true) +
+    `<div class="meter-bar" style="margin:4px 0 2px"><div class="meter-fill" style="width:${pct}%;background:${st.mFree < 0 ? 'var(--red)' : 'var(--green)'}"></div></div>
+     <div class="balance-label" style="margin:0 0 10px">${st.base > 0 ? (st.mFree < 0 ? 'Bills and spending are past this month’s pay' : pct + '% of this month’s pay is still free') : 'Log this month’s pay, or set your expected pay below, to see how much is free'}</div>` +
+    (st.goal > 0 ? row('Set aside for savings', '−' + money(st.goal), 'var(--amber)') + row('Left after savings', neg(after), after < 0 ? 'var(--red)' : 'var(--green)', true)
+      : '<div class="balance-label">Set a monthly savings goal below to see what’s left after saving.</div>') +
+    `<div class="balance-label" style="margin:14px 0 4px">For reference: what’s in the bank</div>` +
+    row(st.anchor ? 'In the bank now (estimate)' : 'Logged balance now', neg(st.bal)) + row('At month end, after pay and bills', neg(st.endBal), st.endBal < 0 ? 'var(--red)' : 'var(--green)', true) +
+    `<div class="balance-label" style="margin:14px 0 4px">A typical month${st.months > 1 ? ' (last ' + st.months + ')' : ''}</div>` +
     row('Money in', money(st.avgIn), 'var(--green)') + row('Money out', money(st.avgOut), 'var(--red)') + row('Kept', neg(st.kept), st.kept < 0 ? 'var(--red)' : 'var(--green)') +
-    (st.anchor ? '' : '<div class="balance-label" style="margin-top:10px">Set your real bank balance on the Overview tab so this matches your bank.</div>');
+    (st.anchor ? '' : '<div class="balance-label" style="margin-top:10px">Set your real bank balance on the Overview tab so the bank figures match your bank.</div>');
 }
 // ---- Savings goals, paid for from the free balance in the order listed ----
 function getGoals() { try { const g = JSON.parse(localStorage.getItem('ps_goals')); if (Array.isArray(g)) return g; } catch (e) {} return []; }
@@ -526,14 +546,14 @@ function addGoal() {
 }
 function delGoal(i) { if (!confirm('Remove this goal?')) return; const g = getGoals(); g.splice(i, 1); putGoals(g); renderGoals(); }
 function renderGoals() {
-  const goals = getGoals(), st = standNums(); let pool = Math.max(0, st.free);
+  const goals = getGoals(), st = standNums(); let pool = Math.max(0, st.mFree - st.goal);
   $('goals').innerHTML = goals.length ? goals.map((g, i) => {
     const have = Math.min(g.target, pool); pool -= have; const left = g.target - have, pct = Math.round(have / g.target * 100);
-    const eta = left <= 0.005 ? 'Covered by what you have free right now.' : st.kept > 0 ? `${money(left)} to go. About ${Math.ceil(left / st.kept)} month${Math.ceil(left / st.kept) === 1 ? '' : 's'} at ${money(st.kept)} kept a month.` : `${money(left)} to go. Keep more than you spend each month to get there.`;
-    return `<div style="margin-bottom:14px;position:relative;padding-right:30px"><div class="meter-label"><span>${esc(g.name)}</span><span>${money(have)} of ${money(g.target)}</span></div>
+    const eta = left <= 0.005 ? 'This month’s free money covers it.' : st.kept > 0 ? `${money(left)} to go. About ${Math.ceil(left / st.kept)} month${Math.ceil(left / st.kept) === 1 ? '' : 's'} at ${money(st.kept)} kept a month.` : `${money(left)} to go. Keep more than you spend each month to get there.`;
+    return `<div style="margin-bottom:14px;position:relative;padding-right:30px"><div class="meter-label"><span>${esc(g.name)}</span><span>${money(have)} of ${money(g.target)} this month</span></div>
       <div class="meter-bar"><div class="meter-fill" style="width:${pct}%;background:var(--green)"></div></div>
       <div class="balance-label">${eta}</div><button class="x" style="position:absolute;right:0;top:0" onclick="delGoal(${i})" aria-label="Remove goal">×</button></div>`;
-  }).join('') : '<div class="balance-label">Add something to save for. Penny Sense counts what you have free after bills toward it.</div>';
+  }).join('') : '<div class="balance-label">Add something to save for. Penny Sense uses what’s left each month after bills and your savings goal.</div>';
 }
 function renderDash() {
   const my = txs.filter(mine).filter(counts);
@@ -598,7 +618,19 @@ function billRow(b) {
   el.appendChild(x);
   return el;
 }
+function renderTally() {
+  const mo = { once: null, weekly: 52 / 12, fortnightly: 26 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12 }, month = todayStr().slice(0, 7);
+  const per = b => b.recur === 'once' ? (b.due_date.startsWith(month) ? b.amount : 0) : b.amount * mo[b.recur];
+  const by = p => bills.filter(b => b.payer === p).reduce((s, b) => s + per(b), 0);
+  const me_ = by('me'), sh = by('shared'), pa = by('partner'), total = me_ + sh + pa;
+  const left = bills.filter(b => !b.paid && b.due_date.startsWith(month)).reduce((s, b) => s + b.amount, 0);
+  const row = (a, v, c) => `<div class="meter-label" style="margin:6px 0"><span>${a}</span><span style="font-weight:600;${c ? 'color:' + c : ''}">${v}</span></div>`;
+  $('bill-tally').innerHTML = bills.length ? `<div class="card-title">Bills for the month</div><div class="balance-amount" style="font-size:30px">${money(total)}</div>
+    <div class="balance-label">all ${bills.length} bills, with weekly, fortnightly, quarterly and yearly ones averaged to a month</div>
+    <div style="margin-top:12px">${row('Still to pay this month', money(left), 'var(--amber)')}${row('Your own bills', money(me_))}${row('Shared bills', money(sh))}${row(partnerName() + '’s bills', money(pa))}${row('Your share (shared bills halved)', money(me_ + sh / 2))}</div>` : '';
+}
 function renderBills() {
+  renderTally();
   const sorted = [...bills].sort((a, b) => (a.paid - b.paid) || a.due_date.localeCompare(b.due_date));
   fill('bill-list', sorted, billRow, 'No bills yet. Add rent, power, phone and so on.');
 }
@@ -752,7 +784,8 @@ async function saveName() {
   toast('Name saved'); loadAll();
 }
 function saveKey() { try { localStorage.setItem('ps_key', $('s-key').value.trim()); toast('Key saved on this phone'); } catch (e) { toast('This browser won’t store the key.'); } }
-function saveGoal() { try { localStorage.setItem('ps_goal', $('goal').value); } catch (e) {} renderSave(); toast('Goal saved'); }
+function savePay() { try { localStorage.setItem('ps_pay', $('pay').value); } catch (e) {} renderStand(); renderGoals(); toast('Expected pay saved'); }
+function saveGoal() { try { localStorage.setItem('ps_goal', $('goal').value); } catch (e) {} renderSave(); renderStand(); renderGoals(); toast('Goal saved'); }
 function exportData() {
   const data = JSON.stringify({ exported: new Date().toISOString(), transactions: txs.filter(mine), bills }, null, 2);
   const a = document.createElement('a');
