@@ -138,12 +138,13 @@ input:focus,select:focus{border-color:var(--accent)}
 .seg button{flex:1;padding:9px;border:none;background:none;color:var(--muted);font-family:var(--font);font-size:14px;border-radius:6px;cursor:pointer}
 .seg button.on{background:var(--accent);color:var(--on-accent)}
 .hint{font-size:12px;color:var(--muted);line-height:1.5;margin-top:8px}
-#toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);padding:10px 16px;border-radius:20px;font-size:13px;z-index:300;display:none;max-width:90%}
+#toast{align-items:center;position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);padding:10px 16px;border-radius:20px;font-size:13px;z-index:300;display:none;max-width:90%}
 #auth{max-width:380px;margin:0 auto;padding:40px 20px}
 #auth img{display:block;width:140px;height:140px;border-radius:30px;margin:0 auto 24px}
 #auth p.sub{text-align:center;color:var(--muted);font-size:14px;margin-bottom:24px}
 #auth-msg{font-size:13px;text-align:center;margin-top:14px;min-height:18px;color:var(--amber)}
 #app{display:none}
+.toast-undo{margin-left:16px;background:none;border:none;color:var(--accent);font-weight:700;font-size:14px;cursor:pointer;padding:6px 4px}
 @media (prefers-reduced-motion:reduce){.meter-fill{transition:none}}
 </style>
 </head>
@@ -209,8 +210,10 @@ input:focus,select:focus{border-color:var(--accent)}
 <div id="view-bills" class="view">
   <div class="section-header"><h2>Bills</h2><button class="btn btn-primary btn-sm" onclick="openBill()">+ Add bill</button></div>
   <div class="card" id="bill-tally"></div>
+  <div class="card" id="bill-up"></div>
+  <div class="months" id="bill-months"></div>
   <div class="list" id="bill-list"></div>
-  <p class="hint" style="text-align:center">Bills are shared. Tap one to mark it paid. Repeating bills move to their next due date.</p>
+  <p class="hint" style="text-align:center">Bills are shared. Tap a due bill to mark it paid. Repeating bills move to their next due date, and earlier dates show as paid.</p>
 </div>
 
 <div id="view-save" class="view">
@@ -354,6 +357,13 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;',
 function fmtDate(s) { return new Date(s+'T00:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short'}); }
 function $(id) { return document.getElementById(id); }
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 2600); }
+function toastUndo(msg, undo) {
+  const t = $('toast'); t.innerHTML = '';
+  const m = document.createElement('span'); m.textContent = msg;
+  const b = document.createElement('button'); b.className = 'toast-undo'; b.textContent = 'Undo';
+  b.onclick = async () => { clearTimeout(t._h); t.style.display = 'none'; await undo(); };
+  t.append(m, b); t.style.display = 'flex'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 8000);
+}
 function mine(t) { return t.user_id === me.id; }
 function partnerName() { const id = Object.keys(names).find(k => k !== me.id); return id ? names[id] : 'Partner'; }
 function seg(id, attr, cb) {
@@ -475,9 +485,11 @@ function updateSelBar() { $('sel-del').textContent = selected.size ? `Delete ${s
 async function delSelected() { if (selected.size) await deleteIds([...selected], true); }
 async function deleteIds(ids, ask) {
   if (ask && !confirm(`Delete ${ids.length} transaction${ids.length === 1 ? '' : 's'}? This can't be undone.`)) return;
+  const gone = txs.filter(t => ids.includes(t.id)).map(t => ({ ...t }));
   const { error } = await sb.from('transactions').delete().in('id', ids);
   if (error) { toast('Couldn’t delete: ' + error.message); return; }
-  selected.clear(); toast(`Deleted ${ids.length}`); loadAll();
+  selected.clear(); loadAll();
+  toastUndo(`Deleted ${ids.length}`, async () => { const { error: e } = await sb.from('transactions').insert(gone); toast(e ? 'Couldn’t undo: ' + e.message : 'Restored'); loadAll(); });
   if (selMode) { updateSelBar(); }
 }
 function fill(id, items, make, emptyMsg) {
@@ -618,21 +630,78 @@ function billRow(b) {
   el.appendChild(x);
   return el;
 }
-function renderTally() {
-  const mo = { once: null, weekly: 52 / 12, fortnightly: 26 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12 }, month = todayStr().slice(0, 7);
-  const per = b => b.recur === 'once' ? (b.due_date.startsWith(month) ? b.amount : 0) : b.amount * mo[b.recur];
-  const by = p => bills.filter(b => b.payer === p).reduce((s, b) => s + per(b), 0);
-  const me_ = by('me'), sh = by('shared'), pa = by('partner'), total = me_ + sh + pa;
-  const left = bills.filter(b => !b.paid && b.due_date.startsWith(month)).reduce((s, b) => s + b.amount, 0);
+let billOff = 0;
+function payerText(b) { return b.payer === 'shared' ? 'Shared' : (b.payer === 'me') === (b.created_by === me.id) ? 'You pay' : partnerName() + ' pays'; }
+function occState(b, ds, today) {
+  if (b.recur === 'once') return b.paid ? 'paid' : ds < today ? 'overdue' : 'due';
+  if (ds < b.due_date) return 'paid';
+  return ds < today ? 'overdue' : 'due';
+}
+function monthOccs(first, last) {
+  const today = todayStr(), out = [];
+  bills.forEach(b => billDatesIn(b, first, last).forEach(ds => out.push({ b, ds, state: occState(b, ds, today) })));
+  return out.sort((x, y) => x.ds.localeCompare(y.ds) || x.b.name.localeCompare(y.b.name));
+}
+function occRow(o) {
+  const { b, ds, state } = o, today = todayStr(), days = Math.round((new Date(ds + 'T00:00:00') - new Date(today + 'T00:00:00')) / 864e5);
+  const [cls, txt] = state === 'paid' ? ['', 'Paid'] : state === 'overdue' ? ['overdue', `Overdue by ${-days} day${days === -1 ? '' : 's'}`] : days === 0 ? ['soon', 'Due today'] : days === 1 ? ['soon', 'Due tomorrow'] : days <= 7 ? ['soon', `Due in ${days} days`] : ['', 'Coming up'];
+  const d = new Date(ds + 'T00:00:00'), el = document.createElement('div');
+  const canPay = b.recur === 'once' || ds === b.due_date;
+  el.className = 'item' + (canPay ? ' clickable' : ''); if (state === 'paid') el.style.opacity = .55;
+  el.innerHTML = `<div style="width:40px;text-align:center;flex:none"><div class="meta" style="font-size:11px">${d.toLocaleString('en-AU', { weekday: 'short' })}</div><div style="font-size:18px;font-weight:600">${d.getDate()}</div></div>
+    <div class="info"><div class="name">${esc(b.name)}${b.recur !== 'once' ? ' <span class="meta">↻ ' + esc(b.recur) + '</span>' : ''}</div>
+    <div class="meta ${cls}">${txt} · ${esc(payerText(b))}</div></div><div class="amt" style="color:var(--red)">${money(b.amount)}</div>`;
+  if (canPay) el.onclick = () => payBill(b);
+  const x = document.createElement('button'); x.className = 'x'; x.textContent = '×'; x.setAttribute('aria-label', 'Delete bill');
+  x.onclick = e => { e.stopPropagation(); delBill(b); }; el.appendChild(x);
+  return el;
+}
+// every date a bill falls on between two YYYY-MM-DD dates, stepping forwards and backwards from its due date
+function billDatesIn(b, first, last) {
+  if (b.recur === 'once') return b.due_date >= first && b.due_date <= last ? [b.due_date] : [];
+  const [mths, days] = { weekly: [0, 7], fortnightly: [0, 14], monthly: [1, 0], quarterly: [3, 0], yearly: [12, 0] }[b.recur] || [1, 0];
+  const base = new Date(b.due_date + 'T00:00:00'), day = base.getDate(), out = [];
+  for (let k = -400; k <= 400; k++) {
+    let d;
+    if (days) { d = new Date(base); d.setDate(d.getDate() + days * k); }
+    else { d = new Date(base.getFullYear(), base.getMonth() + mths * k, 1); d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); }
+    const s = todayStr(d); if (s >= first && s <= last) out.push(s); if (s > last) break;
+  }
+  return out;
+}
+function renderTally(first, last, occs) {
+  const d0 = new Date(first + 'T00:00:00'), label = d0.toLocaleString('en-AU', { month: 'long' });
+  const by = p => occs.filter(o => o.b.payer === p).reduce((s, o) => s + o.b.amount, 0), total = occs.reduce((s, o) => s + o.b.amount, 0);
+  const me_ = by('me'), sh = by('shared'), pa = by('partner'), left = occs.filter(o => o.state !== 'paid').reduce((s, o) => s + o.b.amount, 0);
   const row = (a, v, c) => `<div class="meter-label" style="margin:6px 0"><span>${a}</span><span style="font-weight:600;${c ? 'color:' + c : ''}">${v}</span></div>`;
-  $('bill-tally').innerHTML = bills.length ? `<div class="card-title">Bills for the month</div><div class="balance-amount" style="font-size:30px">${money(total)}</div>
-    <div class="balance-label">all ${bills.length} bills, with weekly, fortnightly, quarterly and yearly ones averaged to a month</div>
-    <div style="margin-top:12px">${row('Still to pay this month', money(left), 'var(--amber)')}${row('Your own bills', money(me_))}${row('Shared bills', money(sh))}${row(partnerName() + '’s bills', money(pa))}${row('Your share (shared bills halved)', money(me_ + sh / 2))}</div>` : '';
+  $('bill-tally').innerHTML = `<div class="card-title">Bills for ${label}</div><div class="balance-amount" style="font-size:30px">${money(total)}</div>
+    <div class="balance-label">${occs.length} bill${occs.length === 1 ? '' : 's'} between ${fmtDate(first)} and ${fmtDate(last)}</div>
+    <div style="margin-top:12px">${row('Still to pay', money(left), 'var(--amber)')}${row('Already paid', money(total - left), 'var(--green)')}${row('Your own bills', money(me_))}${row('Shared bills', money(sh))}${row(partnerName() + '’s bills', money(pa))}${row('Your share (shared bills halved)', money(me_ + sh / 2))}</div>`;
 }
 function renderBills() {
-  renderTally();
-  const sorted = [...bills].sort((a, b) => (a.paid - b.paid) || a.due_date.localeCompare(b.due_date));
-  fill('bill-list', sorted, billRow, 'No bills yet. Add rent, power, phone and so on.');
+  const now = new Date(), today = todayStr();
+  // coming up in the next 7 days (plus anything overdue)
+  const soon = todayStr(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7)), up = [];
+  bills.forEach(b => {
+    const from = b.due_date < today ? b.due_date : today;
+    billDatesIn(b, from, soon).forEach(ds => { const st = occState(b, ds, today); if (st !== 'paid' && (b.recur === 'once' || ds >= b.due_date)) up.push({ b, ds, state: st }); });
+  });
+  up.sort((x, y) => x.ds.localeCompare(y.ds));
+  const ub = $('bill-up'); ub.innerHTML = '<div class="card-title">Coming up in the next 7 days</div><div class="list" id="bill-up-list"></div>';
+  const ul = $('bill-up-list');
+  if (up.length) up.forEach(o => ul.appendChild(occRow(o))); else ul.innerHTML = '<div class="balance-label">Nothing due in the next 7 days.</div>';
+  // month tabs: two back, this month, three ahead
+  const tabs = $('bill-months'); tabs.innerHTML = '';
+  for (let i = -2; i <= 3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1), btn = document.createElement('button');
+    btn.className = 'month-btn' + (i === billOff ? ' active' : ''); btn.textContent = d.toLocaleString('en-AU', { month: 'short' }) + (d.getFullYear() === now.getFullYear() ? '' : ' ’' + String(d.getFullYear()).slice(2));
+    btn.onclick = () => { billOff = i; renderBills(); }; tabs.appendChild(btn);
+  }
+  const sd = new Date(now.getFullYear(), now.getMonth() + billOff, 1), first = todayStr(sd), last = todayStr(new Date(sd.getFullYear(), sd.getMonth() + 1, 0));
+  const occs = monthOccs(first, last);
+  renderTally(first, last, occs);
+  const list = $('bill-list'); list.innerHTML = '';
+  if (occs.length) occs.forEach(o => list.appendChild(occRow(o))); else list.innerHTML = '<div class="empty">No bills in this month. Add rent, power, phone and so on.</div>';
 }
 
 function renderSave() {
@@ -737,9 +806,11 @@ $('tx-save').onclick = async () => {
 };
 $('tx-del').onclick = async () => {
   if (!editing || !confirm('Delete this transaction?')) return;
+  const gone = { ...editing };
   const { error } = await sb.from('transactions').delete().eq('id', editing.id);
   if (error) { toast('Couldn’t delete: ' + error.message); return; }
-  closeM('tx-modal'); toast('Deleted'); loadAll();
+  closeM('tx-modal'); loadAll();
+  toastUndo('Deleted', async () => { const { error: e } = await sb.from('transactions').insert(gone); toast(e ? 'Couldn’t undo: ' + e.message : 'Restored'); loadAll(); });
 };
 
 // ── bills ──
@@ -765,15 +836,23 @@ async function payBill(b) {
   let upd, msg;
   if (b.recur === 'once') { upd = { paid: !b.paid }; msg = b.paid ? 'Marked unpaid' : 'Marked paid'; }
   else { const n = nextDue(b.due_date, b.recur); upd = { due_date: n, paid: false }; msg = `Paid. Next due ${fmtDate(n)}`; }
+  const prev = { paid: b.paid, due_date: b.due_date };
   const { error } = await sb.from('bills').update(upd).eq('id', b.id);
   if (error) { toast('Couldn’t update: ' + error.message); return; }
-  toast(msg); loadAll();
+  loadAll();
+  toastUndo(msg, async () => { const { error: e } = await sb.from('bills').update(prev).eq('id', b.id); toast(e ? 'Couldn’t undo: ' + e.message : 'Undone'); loadAll(); });
 }
 async function delBill(b) {
   if (!confirm(`Delete “${b.name}”? This removes it for both of you.`)) return;
+  const gone = { ...b };
   const { error } = await sb.from('bills').delete().eq('id', b.id);
   if (error) { toast('Couldn’t delete: ' + error.message); return; }
-  toast('Bill deleted'); loadAll();
+  loadAll();
+  toastUndo('Bill deleted', async () => {
+    let { error: e } = await sb.from('bills').insert(gone);
+    if (e) { const { created_by, ...r } = gone; ({ error: e } = await sb.from('bills').insert(r)); }
+    toast(e ? 'Couldn’t undo: ' + e.message : 'Bill restored'); loadAll();
+  });
 }
 
 // ── settings ──
